@@ -1,14 +1,14 @@
 import javafx.application.Application
-import javafx.scene.paint.Color._
 
 import scalafx.Includes._
 import scalafx.animation.{KeyFrame, Timeline}
 import scalafx.event.ActionEvent
 import scalafx.scene.Scene
 import scalafx.scene.canvas.{Canvas, GraphicsContext}
-import scalafx.scene.paint.{CycleMethod, LinearGradient, Stop}
+import scalafx.scene.effect.{DropShadow, Effect}
+import scalafx.scene.paint.Color
+import scalafx.scene.text.Font
 import scalafx.stage.Stage
-import javafx.scene.shape.ArcType
 
 /**
   * Created by slab on 2016/09/14.
@@ -35,7 +35,7 @@ class Window extends Application {
   import Window._
 
   def start(stage: javafx.stage.Stage): Unit = {
-    val canvas = new Canvas(600, 600)
+    val canvas = new Canvas(800, 600)
     val gc = canvas.getGraphicsContext2D
 
     new Stage(stage) {
@@ -47,7 +47,7 @@ class Window extends Application {
 
     runFrame(gc)
 
-    mainLoop.keyFrames = KeyFrame(30 ms, "[irof]", (e: ActionEvent) => runFrame(canvas.graphicsContext2D))
+    mainLoop.keyFrames = KeyFrame(16 ms, "ViFPiS", (e: ActionEvent) => runFrame(canvas.graphicsContext2D))
     mainLoop.play
   }
 
@@ -58,33 +58,33 @@ class Window extends Application {
   }
 
   def draw(gc: GraphicsContext): Unit = {
-    frameCount+=1
-    val lg = LinearGradient(0, 0, 200, 200, true, CycleMethod.Reflect, Stop(0.0, RED), Stop(1.0, BLUE))
-    gc.setStroke(lg)
-    gc.setLineWidth(30)
-    gc.stroke
-    gc.setFill(GREEN)
-    gc.setStroke(BLUE)
-    gc.setLineWidth(5)
-    gc.strokeLine(frameCount, 10, 10, 40)
-    gc.fillOval(10, 60, 30, 30)
-    gc.strokeOval(60, 60, 30, 30)
-    gc.fillRoundRect(110, 60, 30, 30, 10, 10)
-    gc.strokeRoundRect(160, 60, 30, 30, 10, 10)
-    gc.fillArc(10, 110, 30, 30, 45, 240, ArcType.OPEN)
-    gc.fillArc(60, 110, 30, 30, 45, 240, ArcType.CHORD)
-    gc.fillArc(110, 110, 30, 30, 45, 240, ArcType.ROUND)
-    gc.strokeArc(10, 160, 30, 30, 45, 240, ArcType.OPEN)
-    gc.strokeArc(60, 160, 30, 30, 45, 240, ArcType.CHORD)
-    gc.strokeArc(110, 160, 30, 30, 45, 240, ArcType.ROUND)
-    gc.fillPolygon(Array(10, 40, 10, 40), Array(210, 210, 240, 240), 4)
-    gc.strokePolygon(Array(60, 90, 60, 90), Array(210, 210, 240, 240), 4)
-    gc.strokePolyline(Array(110, 140, 110, 140), Array(210, 210, 240, 240), 4)
+    gc.setFill(Color.White)
+    gc.fillRect(0, 0, 800, 600)
 
+    gc.setFont(Font("Consolas", 24))
+
+    val shadowDepth = Math.max(0xF0 - frameCount, 0xA0)
+    val dsE = new DropShadow(10, 10, 10, Color.rgb(shadowDepth, shadowDepth, shadowDepth))
+    whiteRectWithBlackBorder(gc, 100, 100 + frameCount, 300, 100, dsE)
+
+
+    gc.fillText("sliceRecursive", 200, 150 + frameCount)
   }
 
   def execute(): Unit = {
-    println("here")
+    frameCount += 1
+
   }
+
+  def whiteRectWithBlackBorder(gc: GraphicsContext, x: Int, y: Int, w: Int, h: Int, eff1: Effect = null, eff2: Effect = null): Unit = {
+    gc.setEffect(eff1)
+    gc.setFill(Color.White)
+    gc.fillRect(x, y, w, h)
+    gc.setEffect(eff2)
+    gc.setFill(Color.Black)
+    gc.strokeRect(x, y, w, h)
+  }
+
+  def eitherOneIfLeft[T](v: T, defaultValue: T)(p: T => Boolean): T = if (p(v)) v else defaultValue
 
 }
