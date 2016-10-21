@@ -74,11 +74,9 @@ class Demoo extends Application with myUtil {
       val shadowDepth = Math.max(0xF0 - (frameCount - 60 * 2), 0xA0)
       val dsE = new DropShadow(10, 10, 10, Color.rgb(shadowDepth, shadowDepth, shadowDepth))
       textInBox("sliceRecursive(1, 3, List('a, 'b, 'c, 'd, 'e))", 100, 100, eff1 = dsE)
-
     } else if (frameCount < 60 * 6) {
       clearCanvas()
       textInBox("(1, 3, List('a, 'b, 'c, 'd, 'e)) match", 100, 100)
-
       val shadowDepth = Math.max(0xF0 - (frameCount - 60 * 2), 0xA0)
       val dsE = new DropShadow(10, 10, 10, Color.rgb(shadowDepth, shadowDepth, shadowDepth))
       textInBox("sliceRecursive(1, 3, List('a, 'b, 'c, 'd, 'e))", 100, 100 + (frameCount - 60 * 4), eff1 = dsE)
