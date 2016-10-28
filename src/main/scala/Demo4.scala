@@ -43,7 +43,7 @@ class Demo4 extends Application with myUtil {
     val gc: GraphicsContext = canvas.getGraphicsContext2D
 
     new Stage(stage) {
-      title = "irof Advent Calendar 2012 - Save the Earth! irof-san"
+      title = "v4"
       scene = new Scene() {
         content = canvas
       }

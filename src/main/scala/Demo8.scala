@@ -17,7 +17,7 @@ import scalafx.stage.Stage
 /**
   * Created by slab on 2016/09/14.
   */
-object Demo5 {
+object Demo8 {
   private val queue = scala.collection.mutable.Queue.empty[String]
 
   val mainLoop = new Timeline {
@@ -29,21 +29,21 @@ object Demo5 {
     queue += msg
   }
 
-  def main(args: Array[String]) = Application.launch(classOf[Demo6])
+  def main(args: Array[String]) = Application.launch(classOf[Demo8])
 
 }
 
 
-class Demo5 extends Application with myUtil {
+class Demo8 extends Application with myUtil {
 
-  import Demo5._
+  import Demo8._
 
   def start(stage: javafx.stage.Stage): Unit = {
     val canvas = new Canvas(800, 600)
     val gc: GraphicsContext = canvas.getGraphicsContext2D
 
     new Stage(stage) {
-      title = "v5"
+      title = "v8"
       scene = new Scene() {
         content = canvas
       }
@@ -67,17 +67,22 @@ class Demo5 extends Application with myUtil {
     implicit val g = gc
 
     gc.setFont(Font("Consolas", 24))
-    if (frameCount < 60 * 2) {
+    if (frameCount < 60 * 1) {
       clearCanvas()
       textInBox("'b :: sliceRecursive(0, 1, List('c, 'd, 'e))", 100, 100, 50, ww = 640)
       textInBox("sliceRecursive(0, 1, List('c, 'd, 'e))", 202, 75)
 
+    } else if (frameCount < 60 * 2) {
+      clearCanvas()
+      textInBox("'b :: sliceRecursive(0, 1, List('c, 'd, 'e))", 100, 100, 50, ww = 640)
+      redLine("sliceRecursive(0, 1, List('c, 'd, 'e))", 202, 75, (frameCount - 60))
+    } else if (frameCount < 60 * 2+10) {
     } else if (frameCount < 60 * 4) {
       clearCanvas()
       val shadowDepth = Math.max(0xF0 - (frameCount - 60 * 2), 0xA0)
       val dsE = new DropShadow(10, 10, 10, Color.rgb(shadowDepth, shadowDepth, shadowDepth))
       textInBox("'b :: sliceRecursive(0, 1, List('c, 'd, 'e))", 100, 100, 50, ww = 640)
-      textInBox("sliceRecursive(0, 1, List('c, 'd, 'e))", 202, 75, eff1 = dsE)
+      textInBox("sliceRecursive(0, 1, List('c, 'd, 'e))", 202, 75, eff1 = dsE,bc=Color.Red)
 
     } else if (frameCount < 60 * 6) {
       clearCanvas()
@@ -86,9 +91,8 @@ class Demo5 extends Application with myUtil {
       textInBox("'b :: (0, 1, List('c, 'd, 'e)) match", 100, 100, 50, ww = 640)
       textInBox("(0, 1, List('c, 'd, 'e)) match", 202, 75)
       // sin(PI/2/120*Count)*300 , (sin( -PI/2 + PI/120*Count )+1)/2*300
-      val xxx1 = 75 + (Math.sin(Math.PI / 2 / 360 * (frameCount - 60 * 4)) * 360).toInt
       val xxx2 = 75 + ((Math.sin(-Math.PI / 2 + Math.PI / 120 * (frameCount - 60 * 4)) + 1) / 2 * 240).toInt
-      textInBox("sliceRecursive(0, 1, List('c, 'd, 'e))", 202, xxx2, eff1 = dsE)
+      textInBox("sliceRecursive(0, 1, List('c, 'd, 'e))", 202, xxx2, eff1 = dsE,bc=Color.Red)
 
     } else {
       clearCanvas()
@@ -106,23 +110,25 @@ class Demo5 extends Application with myUtil {
 
   def execute(): Unit = {
     frameCount += 1
-
   }
 
-  def textInBox(text: String, x: Int, y: Int, padding: Int = 8, boxColor: Color = Color.White, eff1: Effect = null, eff2: Effect = null, ww: Int = 0, hh: Int = 0)(implicit gc: GraphicsContext): Unit = {
+  def textInBox(text: String, x: Int, y: Int, padding: Int = 8, boxColor: Color = Color.White, eff1: Effect = null, eff2: Effect = null, ww: Int = 0, hh: Int = 0, bc: Color = Color.Black)(implicit gc: GraphicsContext): Unit = {
     val (w, h) = textSizeWithPadding(text, padding)
     val www = if (ww == 0) w else ww
     val hhh = if (hh == 0) h else hh
     val des = fontMetrics.getDescent.toInt
-    rectWithBlackBorder(x, -h + 2 + des + y, www, hhh, boxColor, eff1, eff2)
+    rectWithBlackBorder(x, -h + 2 + des + y, www, hhh, boxColor, eff1, eff2, bc)
     gc.fillText(text, x + padding / 2, y - padding / 2)
   }
 
-  def rectWithBlackBorder(x: Int, y: Int, w: Int, h: Int, c: Color = Color.White, eff1: Effect = null, eff2: Effect = null)(implicit gc: GraphicsContext): Unit = {
+  def rectWithBlackBorder(x: Int, y: Int, w: Int, h: Int, c: Color = Color.White, eff1: Effect = null, eff2: Effect = null, borderColor: Color = Color.Black)(implicit gc: GraphicsContext): Unit = {
     gc.setEffect(eff1)
     gc.setFill(c)
     gc.fillRect(x, y, w, h)
     gc.setEffect(eff2)
+    gc.setStroke(borderColor)
+
+    gc.lineWidth = if(borderColor == Color.Black) 2 else 3
     gc.setFill(Color.Black)
     gc.strokeRect(x, y, w, h)
   }
@@ -139,6 +145,26 @@ class Demo5 extends Application with myUtil {
   def clearCanvas()(implicit gc: GraphicsContext) {
     gc.setFill(Color.White)
     gc.fillRect(0, 0, 800, 600)
+  }
+
+  def redLine(text: String, x: Int, y: Int, frame: Int, padding: Int = 8, boxColor: Color = Color.White, eff1: Effect = null, eff2: Effect = null, ww: Int = 0, hh: Int = 0)(implicit gc: GraphicsContext): Unit = {
+    val (w, h) = textSizeWithPadding(text, padding)
+    val www = if (ww == 0) w else ww
+    val hhh = if (hh == 0) h else hh
+    val des = fontMetrics.getDescent.toInt
+    val vLen = (hhh / 59.0) * frame
+    val hLen = (www / 59.0) * frame
+    val yy = -h + 2 + des + y
+    rectWithBlackBorder(x, yy, www, hhh, boxColor, eff1, eff2)
+    gc.fillText(text, x + padding / 2, y - padding / 2)
+    gc.setStroke(Color.Red)
+    gc.lineWidth = 3
+    gc.strokeLine(x, yy + hhh, x, yy + hhh - vLen) // 1 -> 7
+    gc.strokeLine(x, yy, x + hLen, yy) // 7 -> 9
+    gc.strokeLine(x + www, yy, x + www, yy + vLen) // 9 -> 3
+    gc.strokeLine(x + www, yy + hhh, x + www - hLen, yy + hhh) // 3 -> 1
+    gc.setStroke(Color.Black)
+    gc.lineWidth = 1
   }
 
 }
