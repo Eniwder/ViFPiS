@@ -43,7 +43,7 @@ class Demo9 extends Application with myUtil {
     val gc: GraphicsContext = canvas.getGraphicsContext2D
 
     new Stage(stage) {
-      title = "v8"
+      title = "v9"
       scene = new Scene() {
         content = canvas
       }
