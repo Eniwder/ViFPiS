@@ -2,6 +2,7 @@ import javafx.application.Application
 
 import com.sun.javafx.tk.Toolkit
 
+import scala.collection.mutable
 import scala.language.postfixOps
 import scalafx.Includes._
 import scalafx.animation.{KeyFrame, Timeline}
@@ -19,11 +20,12 @@ import scalafx.stage.Stage
   */
 object ConnectTest {
   type Command = String
+  type History = (String, Int, Int)
   private val execQueue = new scala.collection.mutable.Queue[Command]
   private val callStack = new scala.collection.mutable.Stack[CallStackItem]
+  private val history = new scala.collection.mutable.Stack[History]
   val MethodEnter = "MEnter"
   val MethodExit = "MExit"
-
 
   val mainLoop = new Timeline {
     cycleCount = Timeline.Indefinite
@@ -39,6 +41,10 @@ object ConnectTest {
 
   def popCallStack() {
     execQueue += MethodExit
+  }
+
+  def addHistory(item: History): Unit = {
+    history.push(item)
   }
 
 
@@ -84,11 +90,13 @@ object ConnectTest {
   callStack.push(CallStackItem(callStack.size))
 
   def main(args: Array[String]) = Application.launch(classOf[ConnectTest])
+
 }
 
 sealed trait AnimationState
 case object MoveDown extends AnimationState
 case object Emphasis extends AnimationState
+case object Shadow extends AnimationState
 case object Fixed extends AnimationState
 case object Expanding extends AnimationState
 case object Contracting extends AnimationState
@@ -99,7 +107,6 @@ case class CallStackItem(depth: Int) {
 
   private var now = ""
   private var next = ""
-
 
   def updateNext(replace: String): Unit = {
     next = replace
@@ -122,6 +129,8 @@ case class CallStackItem(depth: Int) {
 
 object CallStackItem {
   var state: AnimationState = Fixed
+
+  val DefaultPadding = 8
 }
 
 class ConnectTest extends Application with myUtil {
@@ -145,8 +154,9 @@ class ConnectTest extends Application with myUtil {
     mainLoop.play
   }
 
+  //  n倍速
+  val speed = 1
   var frameCount = 0
-  var sy = 75
   def runFrame(gc: GraphicsContext): Unit = {
     gc.setFont(Font("Consolas", 24))
     execute(gc)
@@ -159,35 +169,65 @@ class ConnectTest extends Application with myUtil {
     clearCanvas()
     val now = callStack.top
 
+    if (CallStackItem.state != MoveDown) {
+      printHistory()
+    }
+
     CallStackItem.state match {
       case Emphasis =>
-        if (count <= 60) {  // 赤い枠
-          pulseLine(now.text, 100, 100, now.width, now.height, count)
-        } else if (count <= 120) {  // 影をつける
-          val shadowDepth = Math.max(0xF0 - (count % 60), 0xA0)
-          val dsE = new DropShadow(10, 10, 10, Color.rgb(shadowDepth, shadowDepth, shadowDepth))
-          textInBox(now.text, 100, 100, now.width, now.height, eff1 = dsE)
-        } else {
-          count = 0
-          CallStackItem.state = MoveDown
-        }
+        val width =
+          if (textSize(now.nextText)._1 > now.width) {
+            val nextWidth = textSizeWithPadding(now.nextText, CallStackItem.DefaultPadding)._1
+            val diff = nextWidth - now.width
+            now.width + (diff / 60.0 * count).toInt
+          } else {
+            now.width
+          }
+        pulseLine(now.text, 100, 100, width, now.height, count)
+
+
+      case Shadow =>
+        val shadowDepth = Math.max(0xF0 - count, 0xA0)
+        val dsE = new DropShadow(10, 10, 10, Color.rgb(shadowDepth, shadowDepth, shadowDepth))
+        textInBox(now.text, 100, 100, now.width, now.height, eff1 = dsE)
+
       case MoveDown =>
+        val shadowDepth = Math.min(0xA0 + count / 1.5, 0xF0).toInt
+        val dsE = new DropShadow(10, 10, 10, Color.rgb(shadowDepth, shadowDepth, shadowDepth))
         textInBox(now.nextText, 100, 100, now.width, now.height)
-        textInBox(now.text, 100, 100 + count, now.width, now.height)
+        val gray1 = (0xF0 - (count / 60.0) * 0x2F).toInt
+        textInBox(now.text, 100, sinMove(100, count, 120, 120), now.width, now.height, eff1 = dsE, boxColor = Color.rgb(gray1, gray1, gray1)) // 置き換え元
+
+        ConnectTest.history match {
+          case (h1 +: h2 +: tail) =>
+            val gray2 = (0xA0 - (count / 60.0) * 0x20).toInt
+            textInBox(h1._1, 100, sinMove(220, count, 120, 120), h1._2, h1._3, boxColor = Color.rgb(gray2, gray2, gray2))
+            gc.setGlobalAlpha(1.0 - count / 60.0)
+            textInBox(h2._1, 100, sinMove(340, count, 120, 120), h2._2, h2._3, boxColor = Color.rgb(0x80, 0x80, 0x80))
+            gc.setGlobalAlpha(1)
+
+          case (h1 +: mutable.Stack()) =>
+            val gray2 = (0xA0 - (count / 60.0) * 0x20).toInt
+            textInBox(h1._1, 100, sinMove(220, count, 120, 120), h1._2, h1._3, boxColor = Color.rgb(gray2, gray2, gray2))
+
+          case _ =>
+        }
+
       case Fixed =>
 
       case Expanding =>
+
       case Contracting =>
     }
 
-    count += 1
-
   }
+
 
   def execute(gc: GraphicsContext): Unit = {
     frameCount += 1
+    count += speed
+
     implicit val g = gc
-    val Padding = 8
 
     println(callStack.mkString(" "))
     println(callStack.top.text)
@@ -195,37 +235,65 @@ class ConnectTest extends Application with myUtil {
     println()
 
     val now = callStack.top
-    if (CallStackItem.state == Fixed) {
-      val command = execQueue.dequeue()
-      now.update()
-      command match {
-        case MethodEnter =>
-          now.update()
-          callStack.push(CallStackItem(callStack.size))
+    CallStackItem.state match {
+      case Fixed =>
+        val command = execQueue.dequeue()
+        now.update()
+        command match {
+          case MethodEnter =>
+            now.update()
+            callStack.push(CallStackItem(callStack.size))
 
-          if (callStack.size == 2) {  // aete
-            callStack.top.updateNext(execQueue.dequeue())
-            callStack.top.update()
-            callStack.top.updateNext(execQueue.dequeue())
+            if (callStack.size == 2) {  // aete
+              callStack.top.updateNext(execQueue.dequeue())
+              callStack.top.update()
+              callStack.top.updateNext(execQueue.dequeue())
+              CallStackItem.state = Emphasis
+              count = 0
+            } else {
+              CallStackItem.state = Expanding
+            }
+
+          case MethodExit =>
+            callStack.pop()
+            CallStackItem.state = Contracting
+
+          case _ => // 単純に置き換え
+            //    callStack.top.update()
+            callStack.top.updateNext(command)
             CallStackItem.state = Emphasis
             count = 0
-          } else {
-            CallStackItem.state = Expanding
-          }
+        }
 
-        case MethodExit =>
-          callStack.pop()
-          CallStackItem.state = Contracting
-
-        case _ => // 単純に置き換え
-          callStack.top.update()
-          callStack.top.updateNext(command)
-          CallStackItem.state = Emphasis
+      case Emphasis =>
+        if (count > 60) {
           count = 0
-      }
+          now.updateSize(textSizeWithPadding(now.nextText, CallStackItem.DefaultPadding))
+          CallStackItem.state = Shadow
+        }
+
+      case Shadow =>
+        if (count > 60) {
+          count = 0
+          CallStackItem.state = MoveDown
+        }
+
+      case MoveDown =>
+        if (count > 120) {
+          count = 0
+          ConnectTest.addHistory(now.text, now.width, now.height)
+          CallStackItem.state = Fixed
+        }
+
+      case Fixed =>
+
+      case Expanding =>
+      case Contracting =>
     }
 
-    now.updateSize(textSizeWithPadding(now.text, Padding))
+
+    now.updateSize(textSizeWithPadding(now.text, CallStackItem.DefaultPadding))
+
   }
 
   // 四角の左上がx
@@ -262,12 +330,38 @@ class ConnectTest extends Application with myUtil {
     gc.fillRect(0, 0, 800, 600)
   }
 
+  def sinMove(start: Int, count: Int, limit: Int, distance: Int): Int = {
+    start + ((Math.sin(-Math.PI / 2 + Math.PI / limit * count) + 1) / 2 * distance).toInt
+  }
+
+
   def pulseLine(text: String, x: Int, y: Int, w: Int = 0, h: Int = 0, frame: Int, padding: Int = 8, fillColor: Color = Color.White, eff1: Effect = null, eff2: Effect = null)(implicit gc: GraphicsContext): Unit = {
     val des = fontMetrics.getDescent.toInt
     val lww = if (frame % 30 < 15) (frame % 30) / 4 + 1 else 4 - (frame % 15) / 4
 
     rectWithBorder(x, -h + 2 + des + y, w, h, lw = lww, borderColor = Color.Red, fillColor = fillColor)
     gc.fillText(text, x + padding / 2, y - padding / 2)
+  }
+
+  def printHistory()(implicit gc: GraphicsContext): Unit = {
+    // 直近2つは近くに表示、それ以外は履歴部分へ
+    ConnectTest.history match {
+      case (h1 +: h2 +: tail) =>
+        textInBox(h1._1, 100, 220, h1._2, h1._3, boxColor = Color.rgb(0xA0, 0xA0, 0xA0))
+        textInBox(h2._1, 100, 340, h2._2, h2._3, boxColor = Color.rgb(0x80, 0x80, 0x80))
+
+      case (h1 +: mutable.Stack()) =>
+        textInBox(h1._1, 100, 220, h1._2, h1._3, boxColor = Color.rgb(0xA0, 0xA0, 0xA0))
+
+      case (h1 +: tail) =>
+        textInBox(h1._1, 100, 220, h1._2, h1._3, boxColor = Color.rgb(0xA0, 0xA0, 0xA0))
+        textInBox(tail.top._1, 100, 340, tail.top._2, tail.top._3, boxColor = Color.rgb(0x80, 0x80, 0x80))
+
+
+      case _ =>
+    }
+
+
   }
 
 }
