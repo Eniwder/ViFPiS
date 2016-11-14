@@ -22,7 +22,7 @@ object ConnectTest {
   type Command = String
   type History = (String, Int, Int)
   private val execQueue = new scala.collection.mutable.Queue[Command]
-  private val callStack = new scala.collection.mutable.Stack[CallStackItem]
+  val callStack = new scala.collection.mutable.Stack[CallStackItem]
   private val history = new scala.collection.mutable.Stack[History]
   val MethodEnter = "MEnter"
   val MethodExit = "MExit"
@@ -35,8 +35,8 @@ object ConnectTest {
     execQueue += next
   }
 
-  def addCallStack() {
-    execQueue += MethodEnter
+  def addCallStack(method: String = "") {
+    execQueue += s"$MethodEnter<@>$method"
   }
 
   def popCallStack() {
@@ -48,29 +48,31 @@ object ConnectTest {
   }
 
 
-  addCallStack()
+  addCallStack("dummy")
   push("sliceRecursive(start, end, list)")
   push("(start, end, ls) match {")
   push("(1, 3, List(\"a\", \"b\", \"c\", \"d\", \"e\")) match {")
-  push("case (_, _, Nil) => Nil")
-  push("case (_, e, _) if e <= 0")
-  push("case (s, e, h :: tail) if s <= 0")
-  push("case (s, e, h :: tail)")
-  push("case (1, 3, \"a\" :: List(\"b\", \"c\", \"d\", \"e\"))")
-  push("sliceRecursive(s - 1, e - 1, tail)")
-  push("sliceRecursive(0, 2, List(\"b\", \"c\", \"d\", \"e\"))")
-  //addCallStack()
-  push("(start, end, ls) match {")
-  push("(0, 2, List(\"b\", \"c\", \"d\", \"e\")) match {")
-  push("case (_, _, Nil) => Nil")
-  push("case (_, e, _) if e <= 0")
-  push("case (s, e, h :: tail) if s <= 0")
-  push("case (0, 2, \"b\" :: List(\"c\", \"d\", \"e\")) if 0 <= 0")
-  push("h :: sliceRecursive(0, e - 1, tail)")
+//  push("case (_, _, Nil) => Nil")
+//  push("case (_, e, _) if e <= 0")
+//  push("case (s, e, h :: tail) if s <= 0")
+//  push("case (s, e, h :: tail)")
+//  push("case (1, 3, \"a\" :: List(\"b\", \"c\", \"d\", \"e\"))")
+//  push("sliceRecursive(s - 1, e - 1, tail)")
+//  push("sliceRecursive(0, 2, List(\"b\", \"c\", \"d\", \"e\"))")
+//  //addCallStack()
+//  push("(start, end, ls) match {")
+//  push("(0, 2, List(\"b\", \"c\", \"d\", \"e\")) match {")
+//  push("case (_, _, Nil) => Nil")
+//  push("case (_, e, _) if e <= 0")
+//  push("case (s, e, h :: tail) if s <= 0")
+//  push("case (0, 2, \"b\" :: List(\"c\", \"d\", \"e\")) if 0 <= 0")
+//  push("h :: sliceRecursive(0, e - 1, tail)")
   push("\"b\" :: sliceRecursive(0, 1, List(\"c\", \"d\", \"e\"))")
-  addCallStack()
+  addCallStack("sliceRecursive")
   push("(start, end, ls) match {")
   push("(0, 1, List(\"c\", \"d\", \"e\")) match {")
+  push("\"b\" :: sliceRecursive(0, 1, List(\"c\", \"d\", \"e\"))") //
+  addCallStack("sliceRecursive") //
   push("case (_, _, Nil) => Nil")
   push("case (_, e, _) if e <= 0")
   push("case (s, e, h :: tail) if s <= 0")
@@ -101,12 +103,16 @@ case object Fixed extends AnimationState
 case object Expanding extends AnimationState
 case object Contracting extends AnimationState
 
-case class CallStackItem(depth: Int) {
+case class CallStackItem(depth: Int, offsetX: Int = CallStackItem.DefaultX, offsetY: Int = CallStackItem.DefaultY) {
   var width = 0
   var height = 0
 
   private var now = ""
   private var next = ""
+
+  def padding: Int = {
+    Math.abs(depth - ConnectTest.callStack.size) * CallStackItem.DefaultPadding
+  }
 
   def updateNext(replace: String): Unit = {
     next = replace
@@ -130,7 +136,9 @@ case class CallStackItem(depth: Int) {
 object CallStackItem {
   var state: AnimationState = Fixed
 
-  val DefaultPadding = 8
+  val DefaultPadding = 12
+  val DefaultX = 100
+  val DefaultY = 100
 }
 
 class ConnectTest extends Application with myUtil {
@@ -138,7 +146,7 @@ class ConnectTest extends Application with myUtil {
   import ConnectTest._
 
   def start(stage: javafx.stage.Stage): Unit = {
-    val canvas = new Canvas(800, 600)
+    val canvas = new Canvas(1200, 600)
     val gc: GraphicsContext = canvas.getGraphicsContext2D
 
     new Stage(stage) {
@@ -173,42 +181,46 @@ class ConnectTest extends Application with myUtil {
       printHistory()
     }
 
+
     CallStackItem.state match {
       case Emphasis =>
         val width =
           if (textSize(now.nextText)._1 > now.width) {
-            val nextWidth = textSizeWithPadding(now.nextText, CallStackItem.DefaultPadding)._1
+            val nextWidth = textSize(now.nextText)._1
             val diff = nextWidth - now.width
             now.width + (diff / 60.0 * count).toInt
           } else {
             now.width
           }
-        pulseLine(now.text, 100, 100, width, now.height, count)
+        printCallStack()
+        pulseLine(now.text, now.offsetX, now.offsetY, width, now.height, now.padding, count)
 
 
       case Shadow =>
         val shadowDepth = Math.max(0xF0 - count, 0xA0)
         val dsE = new DropShadow(10, 10, 10, Color.rgb(shadowDepth, shadowDepth, shadowDepth))
-        textInBox(now.text, 100, 100, now.width, now.height, eff1 = dsE)
+        printCallStack()
+        textInBox(now.text, now.offsetX, now.offsetY, now.width, now.height, now.padding, eff1 = dsE)
 
       case MoveDown =>
         val shadowDepth = Math.min(0xA0 + count / 1.5, 0xF0).toInt
         val dsE = new DropShadow(10, 10, 10, Color.rgb(shadowDepth, shadowDepth, shadowDepth))
-        textInBox(now.nextText, 100, 100, now.width, now.height)
+        printCallStack()
+        textInBox(now.nextText, now.offsetX, now.offsetY, now.width, now.height, now.padding)
         val gray1 = (0xF0 - (count / 60.0) * 0x2F).toInt
-        textInBox(now.text, 100, sinMove(100, count, 120, 120), now.width, now.height, eff1 = dsE, boxColor = Color.rgb(gray1, gray1, gray1)) // 置き換え元
+        textInBox(now.text, now.offsetX, sinMove(now.offsetY, count, 120, 120), now.width, now.height, now.padding, eff1 = dsE, boxColor = Color.rgb(gray1, gray1, gray1)) // 置き換え元
 
         ConnectTest.history match {
           case (h1 +: h2 +: tail) =>
             val gray2 = (0xA0 - (count / 60.0) * 0x20).toInt
-            textInBox(h1._1, 100, sinMove(220, count, 120, 120), h1._2, h1._3, boxColor = Color.rgb(gray2, gray2, gray2))
+            textInBox(h1._1, 100, sinMove(now.offsetY + 60 * 2, count, 120, 120), h1._2, h1._3, now.padding, boxColor = Color.rgb(gray2, gray2, gray2))
             gc.setGlobalAlpha(1.0 - count / 60.0)
-            textInBox(h2._1, 100, sinMove(340, count, 120, 120), h2._2, h2._3, boxColor = Color.rgb(0x80, 0x80, 0x80))
+            textInBox(h2._1, 100, sinMove(now.offsetY + 60 * 4, count, 120, 120), h2._2, h2._3, now.padding, boxColor = Color.rgb(0x80, 0x80, 0x80))
             gc.setGlobalAlpha(1)
 
           case (h1 +: mutable.Stack()) =>
             val gray2 = (0xA0 - (count / 60.0) * 0x20).toInt
-            textInBox(h1._1, 100, sinMove(220, count, 120, 120), h1._2, h1._3, boxColor = Color.rgb(gray2, gray2, gray2))
+            textInBox(h1._1, 100, sinMove(now.offsetY + 60 * 2, count, 120, 120), h1._2, h1._3, now.padding, boxColor = Color.rgb(gray2, gray2, gray2))
 
           case _ =>
         }
@@ -216,6 +228,11 @@ class ConnectTest extends Application with myUtil {
       case Fixed =>
 
       case Expanding =>
+        printCallStack()
+        textInBox(callStack(1).text, callStack(1).offsetX, callStack(1).offsetY, callStack(1).width, callStack(1).height, callStack(1).padding)
+        gc.setGlobalAlpha(count / 60.0)
+        textInBox(now.text, now.offsetX, now.offsetY, now.width, now.height, now.padding)
+        gc.setGlobalAlpha(1)
 
       case Contracting =>
     }
@@ -230,7 +247,7 @@ class ConnectTest extends Application with myUtil {
     implicit val g = gc
 
     println(callStack.mkString(" "))
-    println(callStack.top.text)
+    println(callStack.top.text, callStack.top.nextText)
     println(execQueue.head, CallStackItem.state)
     println()
 
@@ -239,26 +256,28 @@ class ConnectTest extends Application with myUtil {
       case Fixed =>
         val command = execQueue.dequeue()
         now.update()
-        command match {
-          case MethodEnter =>
-            now.update()
-            callStack.push(CallStackItem(callStack.size))
-
-            if (callStack.size == 2) {  // aete
+        command.split("<@>") match {
+          case Array(MethodEnter, msg) =>
+            if (callStack.size == 1) {  // aete
+              now.update()
+              callStack.push(CallStackItem(callStack.size))
               callStack.top.updateNext(execQueue.dequeue())
               callStack.top.update()
               callStack.top.updateNext(execQueue.dequeue())
               CallStackItem.state = Emphasis
               count = 0
             } else {
+              callStack.push(CallStackItem(callStack.size, offsetX = calcOffsetX(now, msg)))
+              callStack.top.updateNext(extractMethodText(now, msg))
+              callStack.top.update()
               CallStackItem.state = Expanding
             }
 
-          case MethodExit =>
+          case Array(MethodExit, msg) =>
             callStack.pop()
             CallStackItem.state = Contracting
 
-          case _ => // 単純に置き換え
+          case Array(msg) => // 単純に置き換え
             //    callStack.top.update()
             callStack.top.updateNext(command)
             CallStackItem.state = Emphasis
@@ -268,7 +287,7 @@ class ConnectTest extends Application with myUtil {
       case Emphasis =>
         if (count > 60) {
           count = 0
-          now.updateSize(textSizeWithPadding(now.nextText, CallStackItem.DefaultPadding))
+          updateSize(now.nextText, now.depth)
           CallStackItem.state = Shadow
         }
 
@@ -285,23 +304,57 @@ class ConnectTest extends Application with myUtil {
           CallStackItem.state = Fixed
         }
 
-      case Fixed =>
-
       case Expanding =>
+        if (count > 60) {
+          count = 0
+          callStack.top.updateNext(execQueue.dequeue())
+          CallStackItem.state = Emphasis
+        }
+
       case Contracting =>
+      case _ =>
     }
 
-
-    now.updateSize(textSizeWithPadding(now.text, CallStackItem.DefaultPadding))
+    updateSize(callStack.top.text, callStack.top.depth)
 
   }
 
-  // 四角の左上がx
+  def searchMethodEnd(text: String, braceCount: Int = 0, index: Int = 1): Int = text.toList match {
+    case '(' :: t => searchMethodEnd(t.mkString(""), braceCount + 1, index + 1)
+    case ')' :: t if braceCount == 1 => index
+    case ')' :: t => searchMethodEnd(t.mkString(""), braceCount - 1, index + 1)
+    case h :: t => searchMethodEnd(t.mkString(""), braceCount, index + 1)
+    case Nil =>
+      println(s"引数 $text が不正なテキストです")
+      0 // ここには来ないはず
+  }
+
+  def updateSize(text: String, depth: Int)(implicit gc: GraphicsContext): Unit = {
+    callStack.foreach { item =>
+      val (w, h) = textSize(text)
+      val diffX = (depth - item.depth) * CallStackItem.DefaultX
+      item.updateSize(w + diffX, h)
+    }
+  }
+
+  def calcOffsetX(item: CallStackItem, callMethod: String)(implicit gc: GraphicsContext): Int = {
+    val text = item.text.split(callMethod) // TODO この方法だと同じ式で同じメソッドを複数呼んだ場合に詰む
+    item.offsetX + textSize(text(0))._1
+  }
+
+  def extractMethodText(item: CallStackItem, callMethod: String)(implicit gc: GraphicsContext): String = {
+    val startIndex = item.text.indexOf(callMethod)
+    val methodStartText = item.text.drop(startIndex) // TODO この方法だと同じ式で同じメソッドを複数呼んだ場合に詰む
+    val endIndex = searchMethodEnd(methodStartText)
+    methodStartText.take(endIndex)
+  }
+
+  // textの左上がxy、paddingに応じて四角形が大きくなる
   def textInBox(text: String, x: Int, y: Int, w: Int, h: Int, padding: Int = 8, boxColor: Color = Color.White,
                 eff1: Effect = null, eff2: Effect = null, lw: Int = 2, bc: Color = Color.Black)(implicit gc: GraphicsContext): Unit = {
     val des = fontMetrics.getDescent.toInt
-    rectWithBorder(x, -h + 2 + des + y, w, h, boxColor, eff1, eff2, lw, bc)
-    gc.fillText(text, x + padding / 2, y - padding / 2)
+    rectWithBorder(x - padding / 4, y - h + des - padding / 4 + lw / 2, w + padding / 2, h + padding / 2, boxColor, eff1, eff2, lw, bc)
+    gc.fillText(text, x, y)
   }
 
   def rectWithBorder(x: Int, y: Int, w: Int, h: Int, fillColor: Color = Color.White, eff1: Effect = null, eff2: Effect = null, lw: Int = 2, borderColor: Color = Color.Black)(implicit gc: GraphicsContext): Unit = {
@@ -327,22 +380,22 @@ class ConnectTest extends Application with myUtil {
 
   def clearCanvas()(implicit gc: GraphicsContext) {
     gc.setFill(Color.White)
-    gc.fillRect(0, 0, 800, 600)
+    gc.fillRect(0, 0, 1200, 600)
   }
 
-  def sinMove(start: Int, count: Int, limit: Int, distance: Int): Int = {
-    start + ((Math.sin(-Math.PI / 2 + Math.PI / limit * count) + 1) / 2 * distance).toInt
+  def sinMove(startY: Int, count: Int, limit: Int, distance: Int): Int = {
+    startY + ((Math.sin(-Math.PI / 2 + Math.PI / limit * count) + 1) / 2 * distance).toInt
   }
 
 
-  def pulseLine(text: String, x: Int, y: Int, w: Int = 0, h: Int = 0, frame: Int, padding: Int = 8, fillColor: Color = Color.White, eff1: Effect = null, eff2: Effect = null)(implicit gc: GraphicsContext): Unit = {
+  def pulseLine(text: String, x: Int, y: Int, w: Int = 0, h: Int = 0, padding: Int = 8, frame: Int, fillColor: Color = Color.White, eff1: Effect = null, eff2: Effect = null)(implicit gc: GraphicsContext): Unit = {
     val des = fontMetrics.getDescent.toInt
     val lww = if (frame % 30 < 15) (frame % 30) / 4 + 1 else 4 - (frame % 15) / 4
-
-    rectWithBorder(x, -h + 2 + des + y, w, h, lw = lww, borderColor = Color.Red, fillColor = fillColor)
-    gc.fillText(text, x + padding / 2, y - padding / 2)
+    rectWithBorder(x - padding / 4, y - h + des - padding / 4 + lww / 2, w + padding / 2, h + padding / 2, lw = lww, borderColor = Color.Red, fillColor = fillColor)
+    gc.fillText(text, x, y)
   }
 
+  // TODO 履歴部分
   def printHistory()(implicit gc: GraphicsContext): Unit = {
     // 直近2つは近くに表示、それ以外は履歴部分へ
     ConnectTest.history match {
@@ -360,8 +413,11 @@ class ConnectTest extends Application with myUtil {
 
       case _ =>
     }
+  }
 
-
+  // 今までの呼び出し状況の描画、ただし最初に無駄なcallStackItemが1つあるので除去
+  def printCallStack()(implicit gc: GraphicsContext): Unit = {
+    callStack.tail.reverse.tail.foreach(item => textInBox(item.text, item.offsetX, item.offsetY, item.width, item.height, item.padding))
   }
 
 }
