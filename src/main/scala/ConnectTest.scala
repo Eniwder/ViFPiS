@@ -22,8 +22,11 @@ object ConnectTest {
   type Command = String
   type History = (String, Int, Int)
   private val execQueue = new scala.collection.mutable.Queue[Command]
+  private val historyQueue = new scala.collection.mutable.Queue[Command]
   val callStack = new scala.collection.mutable.Stack[CallStackItem]
   private val history = new scala.collection.mutable.Stack[History]
+  var historyMaxIndex = 0
+
   val MethodEnter = "MEnter"
   val MethodExit = "MExit"
 
@@ -47,6 +50,11 @@ object ConnectTest {
     history.push(item)
   }
 
+  def nowIndex(): Int = historyQueue.size - execQueue.size
+
+  def end(): Unit = {
+    execQueue.foreach(historyQueue += _)
+  }
 
   addCallStack("dummy")
   push("sliceRecursive(start, end, list)")
@@ -90,6 +98,7 @@ object ConnectTest {
   popCallStack()
   push("List(\"b\", \"c\")")
   callStack.push(CallStackItem(callStack.size))
+  end()
 
   def main(args: Array[String]) = Application.launch(classOf[ConnectTest])
 
@@ -139,6 +148,7 @@ object CallStackItem {
   val DefaultPadding = 12
   val DefaultX = 100
   val DefaultY = 100
+
 }
 
 class ConnectTest extends Application with myUtil {
@@ -397,23 +407,29 @@ class ConnectTest extends Application with myUtil {
 
   // TODO 履歴部分
   def printHistory()(implicit gc: GraphicsContext): Unit = {
+
     // 直近2つは近くに表示、それ以外は履歴部分へ
-    ConnectTest.history match {
-      case (h1 +: h2 +: tail) =>
-        textInBox(h1._1, 100, 220, h1._2, h1._3, boxColor = Color.rgb(0xA0, 0xA0, 0xA0))
-        textInBox(h2._1, 100, 340, h2._2, h2._3, boxColor = Color.rgb(0x80, 0x80, 0x80))
+    def printLastTwoHistory(): Unit = {
+      ConnectTest.history match {
+        case (h1 +: h2 +: tail) =>
+          textInBox(h1._1, 100, 220, h1._2, h1._3, boxColor = Color.rgb(0xA0, 0xA0, 0xA0))
+          textInBox(h2._1, 100, 340, h2._2, h2._3, boxColor = Color.rgb(0x80, 0x80, 0x80))
 
-      case (h1 +: mutable.Stack()) =>
-        textInBox(h1._1, 100, 220, h1._2, h1._3, boxColor = Color.rgb(0xA0, 0xA0, 0xA0))
+        case (h1 +: mutable.Stack()) =>
+          textInBox(h1._1, 100, 220, h1._2, h1._3, boxColor = Color.rgb(0xA0, 0xA0, 0xA0))
 
-      case (h1 +: tail) =>
-        textInBox(h1._1, 100, 220, h1._2, h1._3, boxColor = Color.rgb(0xA0, 0xA0, 0xA0))
-        textInBox(tail.top._1, 100, 340, tail.top._2, tail.top._3, boxColor = Color.rgb(0x80, 0x80, 0x80))
+        case (h1 +: tail) =>
+          textInBox(h1._1, 100, 220, h1._2, h1._3, boxColor = Color.rgb(0xA0, 0xA0, 0xA0))
+          textInBox(tail.top._1, 100, 340, tail.top._2, tail.top._3, boxColor = Color.rgb(0x80, 0x80, 0x80))
 
-
-      case _ =>
+        case _ => // do nothing
+      }
     }
+
+    printLastTwoHistory()
+
   }
+
 
   // 今までの呼び出し状況の描画、ただし最初に無駄なcallStackItemが1つあるので除去
   def printCallStack()(implicit gc: GraphicsContext): Unit = {
