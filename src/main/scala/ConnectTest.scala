@@ -9,6 +9,7 @@ import scalafx.animation.{KeyFrame, Timeline}
 import scalafx.event.ActionEvent
 import scalafx.scene.Scene
 import scalafx.scene.canvas.{Canvas, GraphicsContext}
+import scalafx.scene.control.ScrollPane
 import scalafx.scene.effect.{DropShadow, Effect}
 import scalafx.scene.paint.Color
 import scalafx.scene.text.Font
@@ -20,7 +21,8 @@ import scalafx.stage.Stage
   */
 object ConnectTest {
   type Command = String
-  type History = (String, Int, Int)
+  type History = (String, Int, Int, Int, Int)
+  // text , x,y,w,h
   private val execQueue = new scala.collection.mutable.Queue[Command]
   private val historyQueue = new scala.collection.mutable.Queue[Command]
   val callStack = new scala.collection.mutable.Stack[CallStackItem]
@@ -159,36 +161,42 @@ class ConnectTest extends Application with myUtil {
     val canvas = new Canvas(1200, 600)
     val gc: GraphicsContext = canvas.getGraphicsContext2D
 
+    val historyPane = new ScrollPane()
+    val hCanvas = new Canvas(300, 400)
+    val hgc = hCanvas.graphicsContext2D
+    historyPane.content = hCanvas
+    historyPane.layoutX = 900
+    historyPane.layoutY = 200
+
     new Stage(stage) {
       title = "connectTest"
       scene = new Scene() {
-        content = canvas
+        content += canvas
+        content += historyPane
       }
     }.show
 
-    runFrame(gc)
-
-    mainLoop.keyFrames = KeyFrame(16 ms, "ViFPiS", (e: ActionEvent) => runFrame(canvas.graphicsContext2D))
+    mainLoop.keyFrames = KeyFrame(16 ms, "ViFPiS", (e: ActionEvent) => runFrame(gc, hgc))
     mainLoop.play
   }
 
   //  n倍速
-  val speed = 1
+  val speed = 2
   var frameCount = 0
-  def runFrame(gc: GraphicsContext): Unit = {
+  def runFrame(gc: GraphicsContext, hgc: GraphicsContext): Unit = {
     gc.setFont(Font("Consolas", 24))
-    execute(gc)
-    draw(gc)
+    execute(gc, hgc)
+    draw(gc, hgc)
   }
 
   var count = 0
-  def draw(gc: GraphicsContext): Unit = {
+  def draw(gc: GraphicsContext, hgc: GraphicsContext): Unit = {
     implicit val g = gc
     clearCanvas()
     val now = callStack.top
 
     if (CallStackItem.state != MoveDown) {
-      printHistory()
+      printLastTwoHistory()
     }
 
 
@@ -223,14 +231,14 @@ class ConnectTest extends Application with myUtil {
         ConnectTest.history match {
           case (h1 +: h2 +: tail) =>
             val gray2 = (0xA0 - (count / 60.0) * 0x20).toInt
-            textInBox(h1._1, 100, sinMove(now.offsetY + 60 * 2, count, 120, 120), h1._2, h1._3, now.padding, boxColor = Color.rgb(gray2, gray2, gray2))
+            textInBox(h1._1, h1._2, sinMove(now.offsetY + 60 * 2, count, 120, 120), h1._4, h1._5, now.padding, boxColor = Color.rgb(gray2, gray2, gray2))
             gc.setGlobalAlpha(1.0 - count / 60.0)
-            textInBox(h2._1, 100, sinMove(now.offsetY + 60 * 4, count, 120, 120), h2._2, h2._3, now.padding, boxColor = Color.rgb(0x80, 0x80, 0x80))
+            textInBox(h2._1, h2._2, sinMove(now.offsetY + 60 * 4, count, 120, 120), h2._4, h2._5, now.padding, boxColor = Color.rgb(0x80, 0x80, 0x80))
             gc.setGlobalAlpha(1)
 
           case (h1 +: mutable.Stack()) =>
             val gray2 = (0xA0 - (count / 60.0) * 0x20).toInt
-            textInBox(h1._1, 100, sinMove(now.offsetY + 60 * 2, count, 120, 120), h1._2, h1._3, now.padding, boxColor = Color.rgb(gray2, gray2, gray2))
+            textInBox(h1._1, h1._2, sinMove(now.offsetY + 60 * 2, count, 120, 120), h1._4, h1._5, now.padding, boxColor = Color.rgb(gray2, gray2, gray2))
 
           case _ =>
         }
@@ -250,7 +258,7 @@ class ConnectTest extends Application with myUtil {
   }
 
 
-  def execute(gc: GraphicsContext): Unit = {
+  def execute(gc: GraphicsContext, hgc: GraphicsContext): Unit = {
     frameCount += 1
     count += speed
 
@@ -310,7 +318,7 @@ class ConnectTest extends Application with myUtil {
       case MoveDown =>
         if (count > 120) {
           count = 0
-          ConnectTest.addHistory(now.text, now.width, now.height)
+          ConnectTest.addHistory(now.text, now.offsetX, now.offsetY, now.width, now.height)
           CallStackItem.state = Fixed
         }
 
@@ -405,28 +413,25 @@ class ConnectTest extends Application with myUtil {
     gc.fillText(text, x, y)
   }
 
-  // TODO 履歴部分
-  def printHistory()(implicit gc: GraphicsContext): Unit = {
+  // 直近2つを近くに表示
+  def printLastTwoHistory()(implicit gc: GraphicsContext): Unit = {
+    ConnectTest.history match {
+      case (h1 +: h2 +: tail) =>
+        textInBox(h1._1, h1._2, 220, h1._4, h1._5, boxColor = Color.rgb(0xA0, 0xA0, 0xA0))
+        textInBox(h2._1, h2._2, 340, h2._4, h2._5, boxColor = Color.rgb(0x80, 0x80, 0x80))
 
-    // 直近2つは近くに表示、それ以外は履歴部分へ
-    def printLastTwoHistory(): Unit = {
-      ConnectTest.history match {
-        case (h1 +: h2 +: tail) =>
-          textInBox(h1._1, 100, 220, h1._2, h1._3, boxColor = Color.rgb(0xA0, 0xA0, 0xA0))
-          textInBox(h2._1, 100, 340, h2._2, h2._3, boxColor = Color.rgb(0x80, 0x80, 0x80))
+      case (h1 +: mutable.Stack()) =>
+        textInBox(h1._1, h1._2, 220, h1._4, h1._5, boxColor = Color.rgb(0xA0, 0xA0, 0xA0))
 
-        case (h1 +: mutable.Stack()) =>
-          textInBox(h1._1, 100, 220, h1._2, h1._3, boxColor = Color.rgb(0xA0, 0xA0, 0xA0))
+      case (h1 +: tail) =>
+        textInBox(h1._1, h1._2, 220, h1._4, h1._5, boxColor = Color.rgb(0xA0, 0xA0, 0xA0))
+        textInBox(tail.top._1, tail.top._2, 340, tail.top._4, tail.top._5, boxColor = Color.rgb(0x80, 0x80, 0x80))
 
-        case (h1 +: tail) =>
-          textInBox(h1._1, 100, 220, h1._2, h1._3, boxColor = Color.rgb(0xA0, 0xA0, 0xA0))
-          textInBox(tail.top._1, 100, 340, tail.top._2, tail.top._3, boxColor = Color.rgb(0x80, 0x80, 0x80))
-
-        case _ => // do nothing
-      }
+      case _ => // do nothing
     }
+  }
 
-    printLastTwoHistory()
+  def printAllHistory()(implicit gc: GraphicsContext): Unit ={
 
   }
 
