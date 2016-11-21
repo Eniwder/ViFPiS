@@ -11,6 +11,7 @@ import scalafx.scene.Scene
 import scalafx.scene.canvas.{Canvas, GraphicsContext}
 import scalafx.scene.control.ScrollPane
 import scalafx.scene.effect.{DropShadow, Effect}
+import scalafx.scene.input.MouseEvent
 import scalafx.scene.paint.Color
 import scalafx.scene.text.Font
 import scalafx.stage.Stage
@@ -21,12 +22,11 @@ import scalafx.stage.Stage
   */
 object ConnectTest {
   type Command = String
-  type History = (String, Int, Int, Int, Int)
-  // text , x,y,w,h
-  private val execQueue = new scala.collection.mutable.Queue[Command]
-  private val historyQueue = new scala.collection.mutable.Queue[Command]
-  val callStack = new scala.collection.mutable.Stack[CallStackItem]
-  private val history = new scala.collection.mutable.Stack[History]
+  private val execQueue = new mutable.Queue[Command]
+  private val historyQueue = new mutable.Queue[Command]
+  val callStack = new mutable.Stack[CallStackItem]
+  private val history = new mutable.Stack[History]
+  private val historyIndexMap = new mutable.HashMap[Int, Int]()
   var historyMaxIndex = 0
 
   val MethodEnter = "MEnter"
@@ -36,6 +36,7 @@ object ConnectTest {
     cycleCount = Timeline.Indefinite
   }
 
+  // --- API start
   def push(next: String) {
     execQueue += next
   }
@@ -48,35 +49,67 @@ object ConnectTest {
     execQueue += MethodExit
   }
 
-  def addHistory(item: History): Unit = {
-    history.push(item)
-  }
-
-  def nowIndex(): Int = historyQueue.size - execQueue.size
-
   def end(): Unit = {
     execQueue.foreach(historyQueue += _)
+  }
+  // API end ---
+
+  def addHistory(item: CallStackItem): Unit = {
+    if (nowIndex > historyMaxIndex) {
+      history.push(History(item, nowIndex, copyCallStack(callStack)))
+      historyIndexMap.put(nowIndex, history.size)
+    }
+  }
+
+  def copyCallStack(cs: Seq[CallStackItem]): List[CallStackItem] = {
+    def loop(stack: List[CallStackItem]): List[CallStackItem] = stack match {
+      case h :: t => dupeItem(h) :: loop(t)
+      case Nil    => Nil
+    }
+    def dupeItem(item: CallStackItem): CallStackItem = {
+      val dest = item.copy()
+      dest.updateNext(item.text)
+      dest.update()
+      dest.updateNext(item.nextText)
+      dest.width = item.width
+      dest.height = item.height
+      dest
+    }
+    loop(cs.toList)
+  }
+
+  def nowIndex: Int = historyQueue.size - execQueue.size
+
+  var prevHistSize = 0
+  def showHistory: List[History] = {
+    val dequeuePlanN = if (CallStackItem.state == Expanding) 1 else 0
+    val ni = nowIndex + dequeuePlanN
+    (if (ni > historyMaxIndex) ConnectTest.history
+    else {
+      val n: Int = historyIndexMap.getOrElse(ni, historyIndexMap.filter(kv => kv._1 < ni).maxBy(kv => kv._1)._2)
+      ConnectTest.history.drop(ConnectTest.history.size - n + 1)
+    }).toList
   }
 
   addCallStack("dummy")
   push("sliceRecursive(start, end, list)")
   push("(start, end, ls) match {")
   push("(1, 3, List(\"a\", \"b\", \"c\", \"d\", \"e\")) match {")
-//  push("case (_, _, Nil) => Nil")
-//  push("case (_, e, _) if e <= 0")
-//  push("case (s, e, h :: tail) if s <= 0")
-//  push("case (s, e, h :: tail)")
-//  push("case (1, 3, \"a\" :: List(\"b\", \"c\", \"d\", \"e\"))")
-//  push("sliceRecursive(s - 1, e - 1, tail)")
-//  push("sliceRecursive(0, 2, List(\"b\", \"c\", \"d\", \"e\"))")
-//  //addCallStack()
-//  push("(start, end, ls) match {")
-//  push("(0, 2, List(\"b\", \"c\", \"d\", \"e\")) match {")
-//  push("case (_, _, Nil) => Nil")
-//  push("case (_, e, _) if e <= 0")
-//  push("case (s, e, h :: tail) if s <= 0")
-//  push("case (0, 2, \"b\" :: List(\"c\", \"d\", \"e\")) if 0 <= 0")
-//  push("h :: sliceRecursive(0, e - 1, tail)")
+  //  push("case (_, _, Nil) => Nil")
+  //  push("case (_, e, _) if e <= 0")
+  //  push("case (s, e, h :: tail) if s <= 0")
+  //  push("case (s, e, h :: tail)")
+  //  push("case (1, 3, \"a\" :: List(\"b\", \"c\", \"d\", \"e\"))")
+  //  push("sliceRecursive(s - 1, e - 1, tail)")
+  //  push("sliceRecursive(0, 2, List(\"b\", \"c\", \"d\", \"e\"))")
+  //  //addCallStack()
+  //  push("(start, end, ls) match {")
+  //  push("(0, 2, List(\"b\", \"c\", \"d\", \"e\")) match {")
+  //  push("case (_, _, Nil) => Nil")
+  //  push("case (_, e, _) if e <= 0")
+  //  push("case (s, e, h :: tail) if s <= 0")
+  //  push("case (0, 2, \"b\" :: List(\"c\", \"d\", \"e\")) if 0 <= 0")
+  //  push("h :: sliceRecursive(0, e - 1, tail)")
   push("\"b\" :: sliceRecursive(0, 1, List(\"c\", \"d\", \"e\"))")
   addCallStack("sliceRecursive")
   push("(start, end, ls) match {")
@@ -114,48 +147,15 @@ case object Fixed extends AnimationState
 case object Expanding extends AnimationState
 case object Contracting extends AnimationState
 
-case class CallStackItem(depth: Int, offsetX: Int = CallStackItem.DefaultX, offsetY: Int = CallStackItem.DefaultY) {
-  var width = 0
-  var height = 0
-
-  private var now = ""
-  private var next = ""
-
-  def padding: Int = {
-    Math.abs(depth - ConnectTest.callStack.size) * CallStackItem.DefaultPadding
-  }
-
-  def updateNext(replace: String): Unit = {
-    next = replace
-  }
-
-  def update(): String = {
-    now = next
-    next = ""
-    now
-  }
-
-  def updateSize(wh: (Int, Int)): Unit = {
-    width = width max wh._1
-    height = height max wh._2
-  }
-
-  def text = now
-  def nextText = next
-}
-
-object CallStackItem {
-  var state: AnimationState = Fixed
-
-  val DefaultPadding = 12
-  val DefaultX = 100
-  val DefaultY = 100
-
-}
 
 class ConnectTest extends Application with myUtil {
 
   import ConnectTest._
+
+  // use mouse event
+  var hmx, hmy: Int = 0
+  var restoreHistoryF = false
+
 
   def start(stage: javafx.stage.Stage): Unit = {
     val canvas = new Canvas(1200, 600)
@@ -167,7 +167,16 @@ class ConnectTest extends Application with myUtil {
     historyPane.content = hCanvas
     historyPane.layoutX = 900
     historyPane.layoutY = 200
-
+    historyPane.maxHeight = 400
+    hCanvas.handleEvent(MouseEvent.MouseMoved) {
+      m: MouseEvent =>
+        hmx = m.x.toInt
+        hmy = m.y.toInt
+    }
+    historyPane.handleEvent(MouseEvent.MouseClicked) {
+      m: MouseEvent =>
+        restoreHistoryF = true
+    }
     new Stage(stage) {
       title = "connectTest"
       scene = new Scene() {
@@ -186,7 +195,9 @@ class ConnectTest extends Application with myUtil {
   def runFrame(gc: GraphicsContext, hgc: GraphicsContext): Unit = {
     gc.setFont(Font("Consolas", 24))
     execute(gc, hgc)
+    if (CallStackItem.state == Fixed) return
     draw(gc, hgc)
+    printAllHistory()(hgc)
   }
 
   var count = 0
@@ -202,16 +213,19 @@ class ConnectTest extends Application with myUtil {
 
     CallStackItem.state match {
       case Emphasis =>
-        val width =
+        val diffW =
           if (textSize(now.nextText)._1 > now.width) {
             val nextWidth = textSize(now.nextText)._1
             val diff = nextWidth - now.width
-            now.width + (diff / 60.0 * count).toInt
+            (diff / 60.0 * count).toInt
           } else {
-            now.width
+            0
           }
+        callStack.foreach { item =>
+          item.updateSize(item.width + diffW, item.height)
+        }
         printCallStack()
-        pulseLine(now.text, now.offsetX, now.offsetY, width, now.height, now.padding, count)
+        pulseLine(now.text, now.offsetX, now.offsetY, now.width , now.height, now.padding, count)
 
 
       case Shadow =>
@@ -225,20 +239,20 @@ class ConnectTest extends Application with myUtil {
         val dsE = new DropShadow(10, 10, 10, Color.rgb(shadowDepth, shadowDepth, shadowDepth))
         printCallStack()
         textInBox(now.nextText, now.offsetX, now.offsetY, now.width, now.height, now.padding)
-        val gray1 = (0xF0 - (count / 60.0) * 0x2F).toInt
+        val gray1 = (0xF0 - (count / 120.0) * 0x2F).toInt
         textInBox(now.text, now.offsetX, sinMove(now.offsetY, count, 120, 120), now.width, now.height, now.padding, eff1 = dsE, boxColor = Color.rgb(gray1, gray1, gray1)) // 置き換え元
 
-        ConnectTest.history match {
-          case (h1 +: h2 +: tail) =>
-            val gray2 = (0xA0 - (count / 60.0) * 0x20).toInt
-            textInBox(h1._1, h1._2, sinMove(now.offsetY + 60 * 2, count, 120, 120), h1._4, h1._5, now.padding, boxColor = Color.rgb(gray2, gray2, gray2))
-            gc.setGlobalAlpha(1.0 - count / 60.0)
-            textInBox(h2._1, h2._2, sinMove(now.offsetY + 60 * 4, count, 120, 120), h2._4, h2._5, now.padding, boxColor = Color.rgb(0x80, 0x80, 0x80))
+        showHistory match {
+          case h1 :: h2 :: tail =>
+            val gray2 = (0xA0 - (count / 120.0) * 0x20).toInt
+            textInBox(h1.text, h1.x, sinMove(now.offsetY + 60 * 2, count, 120, 120), h1.w, h1.h, now.padding, boxColor = Color.rgb(gray2, gray2, gray2))
+            gc.setGlobalAlpha(1.0 - count / 120.0)
+            textInBox(h2.text, h2.x, sinMove(now.offsetY + 60 * 4, count, 120, 120), h2.w, h2.h, now.padding, boxColor = Color.rgb(0x80, 0x80, 0x80))
             gc.setGlobalAlpha(1)
 
-          case (h1 +: mutable.Stack()) =>
-            val gray2 = (0xA0 - (count / 60.0) * 0x20).toInt
-            textInBox(h1._1, h1._2, sinMove(now.offsetY + 60 * 2, count, 120, 120), h1._4, h1._5, now.padding, boxColor = Color.rgb(gray2, gray2, gray2))
+          case h1 :: Nil =>
+            val gray2 = (0xA0 - (count / 120.0) * 0x20).toInt
+            textInBox(h1.text, h1.x, sinMove(now.offsetY + 60 * 2, count, 120, 120), h1.w, h1.h, now.padding, boxColor = Color.rgb(gray2, gray2, gray2))
 
           case _ =>
         }
@@ -264,10 +278,9 @@ class ConnectTest extends Application with myUtil {
 
     implicit val g = gc
 
-    println(callStack.mkString(" "))
-    println(callStack.top.text, callStack.top.nextText)
-    println(execQueue.head, CallStackItem.state)
-    println()
+    //    println(callStack.mkString(" ") + "\n+" +
+    //      (callStack.top.text, callStack.top.nextText) + "\n" +
+    //      (execQueue.head, CallStackItem.state) + "\n")
 
     val now = callStack.top
     CallStackItem.state match {
@@ -276,7 +289,8 @@ class ConnectTest extends Application with myUtil {
         now.update()
         command.split("<@>") match {
           case Array(MethodEnter, msg) =>
-            if (callStack.size == 1) {  // aete
+            if (callStack.size == 1) {
+              // aete
               now.update()
               callStack.push(CallStackItem(callStack.size))
               callStack.top.updateNext(execQueue.dequeue())
@@ -318,7 +332,7 @@ class ConnectTest extends Application with myUtil {
       case MoveDown =>
         if (count > 120) {
           count = 0
-          ConnectTest.addHistory(now.text, now.offsetX, now.offsetY, now.width, now.height)
+          ConnectTest.addHistory(now)
           CallStackItem.state = Fixed
         }
 
@@ -330,7 +344,7 @@ class ConnectTest extends Application with myUtil {
         }
 
       case Contracting =>
-      case _ =>
+      case _           =>
     }
 
     updateSize(callStack.top.text, callStack.top.depth)
@@ -338,12 +352,12 @@ class ConnectTest extends Application with myUtil {
   }
 
   def searchMethodEnd(text: String, braceCount: Int = 0, index: Int = 1): Int = text.toList match {
-    case '(' :: t => searchMethodEnd(t.mkString(""), braceCount + 1, index + 1)
+    case '(' :: t                    => searchMethodEnd(t.mkString(""), braceCount + 1, index + 1)
     case ')' :: t if braceCount == 1 => index
-    case ')' :: t => searchMethodEnd(t.mkString(""), braceCount - 1, index + 1)
-    case h :: t => searchMethodEnd(t.mkString(""), braceCount, index + 1)
-    case Nil =>
-      println(s"引数 $text が不正なテキストです")
+    case ')' :: t                    => searchMethodEnd(t.mkString(""), braceCount - 1, index + 1)
+    case h :: t                      => searchMethodEnd(t.mkString(""), braceCount, index + 1)
+    case Nil                         =>
+      sys.error(s"引数 $text が不正なテキストです")
       0 // ここには来ないはず
   }
 
@@ -415,30 +429,59 @@ class ConnectTest extends Application with myUtil {
 
   // 直近2つを近くに表示
   def printLastTwoHistory()(implicit gc: GraphicsContext): Unit = {
-    ConnectTest.history match {
-      case (h1 +: h2 +: tail) =>
-        textInBox(h1._1, h1._2, 220, h1._4, h1._5, boxColor = Color.rgb(0xA0, 0xA0, 0xA0))
-        textInBox(h2._1, h2._2, 340, h2._4, h2._5, boxColor = Color.rgb(0x80, 0x80, 0x80))
+    showHistory match {
+      case h1 :: h2 :: tail =>
+        textInBox(h1.text, h1.x, h1.y + 60 * 2, h1.w, h1.h, padding = h1.padding, boxColor = Color.rgb(0xC1, 0xC1, 0xC1))
+        textInBox(h2.text, h2.x, h1.y + 60 * 4, h2.w, h2.h, padding = h2.padding, boxColor = Color.rgb(0x80, 0x80, 0x80))
 
-      case (h1 +: mutable.Stack()) =>
-        textInBox(h1._1, h1._2, 220, h1._4, h1._5, boxColor = Color.rgb(0xA0, 0xA0, 0xA0))
+      case h1 :: Nil =>
+        textInBox(h1.text, h1.x, h1.y + 60 * 2, h1.w, h1.h, padding = h1.padding, boxColor = Color.rgb(0xC1, 0xC1, 0xC1))
 
-      case (h1 +: tail) =>
-        textInBox(h1._1, h1._2, 220, h1._4, h1._5, boxColor = Color.rgb(0xA0, 0xA0, 0xA0))
-        textInBox(tail.top._1, tail.top._2, 340, tail.top._4, tail.top._5, boxColor = Color.rgb(0x80, 0x80, 0x80))
+      case h1 :: tail =>
+        textInBox(h1.text, h1.x, h1.y + 60 * 2, h1.w, h1.h, padding = h1.padding, boxColor = Color.rgb(0xC1, 0xC1, 0xC1))
+        textInBox(tail.head.text, tail.head.x, 60 * 4, tail.head.w, tail.head.h, tail.head.padding, boxColor = Color.rgb(0x80, 0x80, 0x80))
 
       case _ => // do nothing
     }
   }
 
-  def printAllHistory()(implicit gc: GraphicsContext): Unit ={
-
+  def printAllHistory()(implicit gc: GraphicsContext): Unit = {
+    val canvas = gc.canvas
+    val hist = ConnectTest.history
+    val height = 32
+    canvas height = (hist.size * height + height / 2) max 400
+    for (h <- hist.reverse.zipWithIndex) {
+      val x = (h._1.x - CallStackItem.DefaultX) / 10 + canvas.getLayoutX.toInt
+      val y = (h._2 + 1) * height + canvas.getLayoutY.toInt
+      val newHy = hmy + canvas.getLayoutY.toInt
+      val withinRange = newHy - height / 3 < y && y < newHy + height / 1.5 // よく分からんけど、3と1.5がちょうどいい
+      val boxColor = if (withinRange) Color.SlateGray else Color.LightGray
+      val borderColor = if (withinRange) Color.DimGray else Color.Black
+      textInBox(h._1.text, x, y, h._1.w, height - 8, boxColor = boxColor, bc = borderColor)
+      // 履歴がクリックされていたら、その場所を復元する
+      // クリックイベントにしなかった理由は、ここで定義したheightによって位置が変わることと、withinRangeを利用するため
+      if (withinRange && restoreHistoryF) {
+        restoreHistory(h._2, h._1.qIndex)
+      }
+    }
+    restoreHistoryF = false
   }
 
 
   // 今までの呼び出し状況の描画、ただし最初に無駄なcallStackItemが1つあるので除去
   def printCallStack()(implicit gc: GraphicsContext): Unit = {
     callStack.tail.reverse.tail.foreach(item => textInBox(item.text, item.offsetX, item.offsetY, item.width, item.height, item.padding))
+  }
+
+  def restoreHistory(index: Int, qIndex: Int): Unit = {
+    historyMaxIndex = historyMaxIndex max history.head.qIndex
+    callStack.clear()
+    callStack.pushAll(copyCallStack(history.reverse(index).state).reverse)
+    CallStackItem.state = Emphasis
+    count = 0
+    execQueue.clear()
+    execQueue ++= historyQueue.drop(qIndex)
+
   }
 
 }
