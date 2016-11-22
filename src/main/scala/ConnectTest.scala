@@ -63,17 +63,8 @@ object ConnectTest {
 
   def copyCallStack(cs: Seq[CallStackItem]): List[CallStackItem] = {
     def loop(stack: List[CallStackItem]): List[CallStackItem] = stack match {
-      case h :: t => dupeItem(h) :: loop(t)
-      case Nil    => Nil
-    }
-    def dupeItem(item: CallStackItem): CallStackItem = {
-      val dest = item.copy()
-      dest.updateNext(item.text)
-      dest.update()
-      dest.updateNext(item.nextText)
-      dest.width = item.width
-      dest.height = item.height
-      dest
+      case h :: t => CallStackItem.dupe(h) :: loop(t)
+      case Nil => Nil
     }
     loop(cs.toList)
   }
@@ -82,7 +73,7 @@ object ConnectTest {
 
   var prevHistSize = 0
   def showHistory: List[History] = {
-    val dequeuePlanN = if (CallStackItem.state == Expanding) 1 else 0
+    val dequeuePlanN = if (CallStackItem.state == Expanding || CallStackItem.state == Contracting) 1 else 0
     val ni = nowIndex + dequeuePlanN
     (if (ni > historyMaxIndex) ConnectTest.history
     else {
@@ -117,14 +108,14 @@ object ConnectTest {
   push("\"b\" :: sliceRecursive(0, 1, List(\"c\", \"d\", \"e\"))") //
   addCallStack("sliceRecursive") //
   push("case (_, _, Nil) => Nil")
-  push("case (_, e, _) if e <= 0")
-  push("case (s, e, h :: tail) if s <= 0")
-  push("case (0, 1, \"c\" :: List(\"d\", \"e\")) if 0 <= 0")
-  push("h :: sliceRecursive(0, e - 1, tail)")
-  push("\"c\" :: sliceRecursive(0, 0, List(\"d\", \"e\"))")
-  push("(start, end, ls) match {")
-  push("(0, 1, List(\"c\", \"d\", \"e\")) match {")
-  push("case (_, _, Nil) => Nil")
+//  push("case (_, e, _) if e <= 0")
+//  push("case (s, e, h :: tail) if s <= 0")
+//  push("case (0, 1, \"c\" :: List(\"d\", \"e\")) if 0 <= 0")
+//  push("h :: sliceRecursive(0, e - 1, tail)")
+//  push("\"c\" :: sliceRecursive(0, 0, List(\"d\", \"e\"))")
+//  push("(start, end, ls) match {")
+//  push("(0, 1, List(\"c\", \"d\", \"e\")) match {")
+//  push("case (_, _, Nil) => Nil")
   push("case (_, e, _) if e <= 0")
   push("case (_, 0, _) if 0 <= 0")
   push("Nil")
@@ -133,6 +124,9 @@ object ConnectTest {
   popCallStack()
   push("List(\"b\", \"c\")")
   callStack.push(CallStackItem(callStack.size))
+  push("case (_, _, Nil) => Nil")//
+  push("case (_, _, Nil) => Nil")//
+  push("case (_, _, Nil) => Nil")//
   end()
 
   def main(args: Array[String]) = Application.launch(classOf[ConnectTest])
@@ -174,8 +168,12 @@ class ConnectTest extends Application with myUtil {
         hmy = m.y.toInt
     }
     historyPane.handleEvent(MouseEvent.MouseClicked) {
+      m: MouseEvent => restoreHistoryF = true
+    }
+    historyPane.handleEvent(MouseEvent.MouseExited) {
       m: MouseEvent =>
-        restoreHistoryF = true
+        hmx = -1
+        hmy = -1
     }
     new Stage(stage) {
       title = "connectTest"
@@ -190,7 +188,7 @@ class ConnectTest extends Application with myUtil {
   }
 
   //  n倍速
-  val speed = 2
+  val speed = 4
   var frameCount = 0
   def runFrame(gc: GraphicsContext, hgc: GraphicsContext): Unit = {
     gc.setFont(Font("Consolas", 24))
@@ -225,7 +223,7 @@ class ConnectTest extends Application with myUtil {
           item.updateSize(item.width + diffW, item.height)
         }
         printCallStack()
-        pulseLine(now.text, now.offsetX, now.offsetY, now.width , now.height, now.padding, count)
+        pulseLine(now.text, now.offsetX, now.offsetY, now.width, now.height, now.padding, count)
 
 
       case Shadow =>
@@ -267,6 +265,13 @@ class ConnectTest extends Application with myUtil {
         gc.setGlobalAlpha(1)
 
       case Contracting =>
+        printCallStack()
+        textInBox(now.text, now.offsetX, now.offsetY, now.width, now.height, now.padding)
+        val c = (0xFF * (count / 60.0)).toInt
+        textInBox(now.text, now.offsetX, now.offsetY, now.width, now.height, now.padding, bc = Color.rgb(c, c, c))
+        gc.setGlobalAlpha(1)
+
+
     }
 
   }
@@ -305,8 +310,7 @@ class ConnectTest extends Application with myUtil {
               CallStackItem.state = Expanding
             }
 
-          case Array(MethodExit, msg) =>
-            callStack.pop()
+          case Array(MethodExit) =>
             CallStackItem.state = Contracting
 
           case Array(msg) => // 単純に置き換え
@@ -344,7 +348,22 @@ class ConnectTest extends Application with myUtil {
         }
 
       case Contracting =>
-      case _           =>
+        if (count > 60) {
+          count = 0
+          callStack.pop()
+          val caller = callStack.top
+          val (s, e) = caller.methodCallIndex
+          val h = caller.text.take(s)
+          val t = caller.text.drop(e)
+          val returnValueText = h + s"%-${now.maxIndex}s".format(now.text) + t
+          caller.updateNext(returnValueText)
+          caller.update()
+          caller.updateNext(execQueue.dequeue())
+
+          CallStackItem.state = Emphasis
+        }
+
+      case _ =>
     }
 
     updateSize(callStack.top.text, callStack.top.depth)
@@ -352,11 +371,11 @@ class ConnectTest extends Application with myUtil {
   }
 
   def searchMethodEnd(text: String, braceCount: Int = 0, index: Int = 1): Int = text.toList match {
-    case '(' :: t                    => searchMethodEnd(t.mkString(""), braceCount + 1, index + 1)
+    case '(' :: t => searchMethodEnd(t.mkString(""), braceCount + 1, index + 1)
     case ')' :: t if braceCount == 1 => index
-    case ')' :: t                    => searchMethodEnd(t.mkString(""), braceCount - 1, index + 1)
-    case h :: t                      => searchMethodEnd(t.mkString(""), braceCount, index + 1)
-    case Nil                         =>
+    case ')' :: t => searchMethodEnd(t.mkString(""), braceCount - 1, index + 1)
+    case h :: t => searchMethodEnd(t.mkString(""), braceCount, index + 1)
+    case Nil =>
       sys.error(s"引数 $text が不正なテキストです")
       0 // ここには来ないはず
   }
@@ -378,6 +397,7 @@ class ConnectTest extends Application with myUtil {
     val startIndex = item.text.indexOf(callMethod)
     val methodStartText = item.text.drop(startIndex) // TODO この方法だと同じ式で同じメソッドを複数呼んだ場合に詰む
     val endIndex = searchMethodEnd(methodStartText)
+    item.setMethodCallIndex(startIndex, startIndex + endIndex)
     methodStartText.take(endIndex)
   }
 
@@ -449,7 +469,7 @@ class ConnectTest extends Application with myUtil {
     val canvas = gc.canvas
     val hist = ConnectTest.history
     val height = 32
-    canvas height = (hist.size * height + height / 2) max 400
+    canvas.height = (hist.size * height + height / 2) max 400
     for (h <- hist.reverse.zipWithIndex) {
       val x = (h._1.x - CallStackItem.DefaultX) / 10 + canvas.getLayoutX.toInt
       val y = (h._2 + 1) * height + canvas.getLayoutY.toInt
