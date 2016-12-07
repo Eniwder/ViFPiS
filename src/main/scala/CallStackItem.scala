@@ -40,6 +40,11 @@ case class CallStackItem(depth: Int, offsetX: Int = CallStackItem.DefaultX, offs
 
   def text = now
   def nextText = next
+
+  def x = offsetX + (if (CallStackItem.subStep) 50 else 0)
+
+  def y = offsetY + (if (CallStackItem.subStep) ConnectTest.callStack(1).height else 0)
+
 }
 
 object CallStackItem {
@@ -49,6 +54,8 @@ object CallStackItem {
   val DefaultX = 100
   val DefaultY = 100
 
+  var subStep = false
+  var mainText = ""
 
   def dupe(from: CallStackItem): CallStackItem = {
     val ret = from.copy()

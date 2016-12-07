@@ -1,9 +1,10 @@
 case class History(item:CallStackItem,
   qIndex: Int, // この時点でexecQueueが何番目を指しているか
-  state: List[CallStackItem]) {
+  state: List[CallStackItem],
+  display:Boolean = true) {
 
-  val x = item.offsetX
-  val y = item.offsetY
+  val x = item.x
+  val y = item.y
   val w = item.width
   val h = item.height
   val padding = item.padding

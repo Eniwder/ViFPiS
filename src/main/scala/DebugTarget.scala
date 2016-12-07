@@ -8,7 +8,7 @@ object DebugTarget {
     val end = 3
     val list = List("a", "b", "c", "d", "e")
 
-//    println(list map {x => x*2})
+    list map {x => x*2}
 
     val sliced = sliceRecursive(start, end, list)
     println(sliced)

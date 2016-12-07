@@ -35,12 +35,21 @@ object LowlevelTest extends App {
     s.onUnsafeBreakpoint(cfileName, clineNumber).foreach(be => {
       s.lowlevel.breakpointManager.removeBreakpointRequest(cfileName, clineNumber)
 
-      val entryReq = s.underlyingVirtualMachine.eventRequestManager().createMethodEntryRequest()
-      entryReq.addClassFilter("DebugTarget*")
-      entryReq.enable()
-      val exitReq = s.underlyingVirtualMachine.eventRequestManager().createMethodExitRequest()
-      exitReq.addClassFilter("DebugTarget*")
-      exitReq.enable()
+      val entryReq1 = s.underlyingVirtualMachine.eventRequestManager().createMethodEntryRequest()
+      entryReq1.addClassFilter("DebugTarget*")
+      entryReq1.enable()
+
+      val entryReq2 = s.underlyingVirtualMachine.eventRequestManager().createMethodEntryRequest()
+      entryReq2.addClassFilter("scala.collection.immutable.List*")
+      entryReq2.enable()
+
+      val exitReq1 = s.underlyingVirtualMachine.eventRequestManager().createMethodExitRequest()
+      exitReq1.addClassFilter("DebugTarget*")
+      exitReq1.enable()
+
+      val exitReq2 = s.underlyingVirtualMachine.eventRequestManager().createMethodExitRequest()
+      exitReq2.addClassFilter("scala.collection.immutable.List*")
+      exitReq2.enable()
 
       val path = be.location().sourcePath()
       val line = be.location().lineNumber()
@@ -50,7 +59,8 @@ object LowlevelTest extends App {
 
     })
 
-    s.onUnsafeEvent(ExceptionEventType).foreach { ee => val exceptionEvent = ee.asInstanceOf[ExceptionEvent]
+    s.onUnsafeEvent(ExceptionEventType).foreach { ee =>
+      val exceptionEvent = ee.asInstanceOf[ExceptionEvent]
       println("!!" + exceptionEvent.catchLocation())
     }
 
@@ -64,6 +74,7 @@ object LowlevelTest extends App {
 //        println(s"\t${methodEntry.thread().frames().size()}")
       // println(methodEntry.method(), methodEntry.location())
     }
+
 
 
     /////////////////////////////////////////////////////
@@ -91,16 +102,25 @@ object LowlevelTest extends App {
 
     /////////////////////////////////////////////////////
     /////////////////////////////////////////////////////
-    s.onUnsafeEvent(StepEventType).foreach { pp => val stepEvent = pp.asInstanceOf[StepEvent]
+    s.onUnsafeEvent(StepEventType).foreach { pp =>
+      val stepEvent = pp.asInstanceOf[StepEvent]
       val fileName = stepEvent.location().sourcePath()
       val lineNumber = stepEvent.location().lineNumber()
-
       if (stepEvent.location().method().toString.contains("main(")) {
         printStep(fileName, lineNumber, stepEvent)
         s.stepIntoLine(stepEvent.thread())
       } else if (stepEvent.location().method().toString.contains("sliceRecursive")) {
         printStep(fileName, lineNumber, stepEvent)
         s.stepIntoLine(stepEvent.thread())
+      } else if (stepEvent.location().method().toString.contains("List.")) {
+        println("//////////" + stepEvent.location().method().toString)
+
+        println("\t" + makeList(stepEvent.thread().frame(1).getValue(stepEvent.thread().frame(1).visibleVariableByName("list")).asInstanceOf[ObjectReference]))
+        println("\t" + stepEvent.thread().frame(1).visibleVariables())
+        println("\t" + stepEvent.thread().frame(0).visibleVariables())
+        println("\t" + makeList(stepEvent.thread().frame(0).thisObject()))
+        // println("\t" + stepEvent.thread().frame(0).getValue(stepEvent.thread().frame(0).visibleVariableByName("bf")))
+        s.stepOutLine(stepEvent.thread())
       } else {
         //print(s"Step: $fileName:$lineNumber \t Source:${file(lineNumber - 1)}")
         //println("\t" + stepEvent.location().method() + " , " + stepEvent)
@@ -119,9 +139,8 @@ object LowlevelTest extends App {
     //  println("\t" + stepEvent.location().method())
   }
 
-  def isListType(tpe: Type): Boolean = {
-    tpe.name.contains("scala.collection.immutable.List")
-  }
+  def isListType(tpe: Type): Boolean = tpe.name.contains("scala.collection.immutable.List")
+
 
   def makeList(or: ObjectReference): List[_] = {
     val fields = or.getValues(or.referenceType().allFields())
