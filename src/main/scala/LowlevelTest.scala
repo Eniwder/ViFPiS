@@ -1,15 +1,16 @@
+import com.sun.jdi.ObjectReference
 import com.sun.jdi.event.{ExceptionEvent, MethodEntryEvent, MethodExitEvent, StepEvent}
-import com.sun.jdi.{ObjectReference, Type}
 import org.scaladebugger.api.debuggers.LaunchingDebugger
 import org.scaladebugger.api.lowlevel.events.EventType._
 import org.scaladebugger.api.utils.JDITools
+import org.scaladebugger.api.virtualmachines.ScalaVirtualMachine
 
 import scala.io.Source
 
-/**
-  * Created by slab on 2016/08/22.
-  */
 object LowlevelTest extends App {
+
+  val x = "tte({x => x*n})"
+
   // Get the executing class name (remove $ from object class name)
   val klass = DebugTarget.getClass
   val className = klass.getName.replaceAllLiterally("$", "")
@@ -25,6 +26,24 @@ object LowlevelTest extends App {
 
   val file = Source.fromFile("F:/Temp/ScalaDebuggerTest/src/main/scala/DebugTarget.scala").getLines().toList
 
+  val listClass = "scala.collection.immutable.List"
+  val functionN = "scala.Function"
+  val coverListMethods = Set("map", "flatMap", "filter")
+
+  var listExpwNow = false
+
+  def resisterMethodEntryEvent(s: ScalaVirtualMachine, filter: String) {
+    val entryReq = s.underlyingVirtualMachine.eventRequestManager().createMethodEntryRequest()
+    entryReq.addClassFilter(filter)
+    entryReq.enable()
+  }
+
+  def resisterMethodExitEvent(s: ScalaVirtualMachine, filter: String) {
+    val exitReq = s.underlyingVirtualMachine.eventRequestManager().createMethodExitRequest()
+    exitReq.addClassFilter(filter)
+    exitReq.enable()
+  }
+
   launchingDebugger.start { s =>
     println("Launched and connected to JVM: " + s.uniqueId)
 
@@ -35,21 +54,14 @@ object LowlevelTest extends App {
     s.onUnsafeBreakpoint(cfileName, clineNumber).foreach(be => {
       s.lowlevel.breakpointManager.removeBreakpointRequest(cfileName, clineNumber)
 
-      val entryReq1 = s.underlyingVirtualMachine.eventRequestManager().createMethodEntryRequest()
-      entryReq1.addClassFilter("DebugTarget*")
-      entryReq1.enable()
+      resisterMethodEntryEvent(s, "DebugTarget*")
+      resisterMethodEntryEvent(s, s"$listClass*")
+      //   resisterMethodEntryEvent(s,s"$functionN*")
 
-      val entryReq2 = s.underlyingVirtualMachine.eventRequestManager().createMethodEntryRequest()
-      entryReq2.addClassFilter("scala.collection.immutable.List*")
-      entryReq2.enable()
+      resisterMethodExitEvent(s, "DebugTarget*")
+      resisterMethodExitEvent(s, s"$listClass*")
+      //  resisterMethodExitEvent(s,s"$functionN*")
 
-      val exitReq1 = s.underlyingVirtualMachine.eventRequestManager().createMethodExitRequest()
-      exitReq1.addClassFilter("DebugTarget*")
-      exitReq1.enable()
-
-      val exitReq2 = s.underlyingVirtualMachine.eventRequestManager().createMethodExitRequest()
-      exitReq2.addClassFilter("scala.collection.immutable.List*")
-      exitReq2.enable()
 
       val path = be.location().sourcePath()
       val line = be.location().lineNumber()
@@ -68,13 +80,35 @@ object LowlevelTest extends App {
     /////////////////////////////////////////////////////
     s.onUnsafeEvent(MethodEntryEventType).foreach { mee =>
       val methodEntry = mee.asInstanceOf[MethodEntryEvent]
-      print("MEntry:")
-      println(s"\t${methodEntry.method()}")
+      val fullMethod = methodEntry.method.toString
+      val methodName = methodEntry.method.name
+      val caller = fullMethod.split('(').head
+      if (caller.contains(listClass)) {
+        if (coverListMethods.contains(methodName)) {
+          print("MEntry:")
+          println(s"\t${methodEntry.method()}")
+          println("\t" + makeList(methodEntry.thread().frame(0).thisObject()))
+          listExpwNow = true
+        }
+      } else if (!fullMethod.contains("anonfun")) {
+        print("MEntry:")
+        println(s"\t${methodEntry.method()}")
+      } else if (fullMethod.contains("anonfun") && fullMethod.contains("apply") && listExpwNow) {
+        print("MEntry:Lambda\t")
+        val lambdaExpSource = file.drop(methodEntry.location().lineNumber() - 1).mkString("")
+        val lambdaRegex = """.*?\{(.*?)=>(.*?)\}.*""".r
+        lambdaExpSource match {
+          case lambdaRegex(arg, exp) => println(s"$arg => $exp")
+          case _ => println("err", lambdaExpSource)
+        }
+
+    // println(s"\t$methodEntry")
+      //  println(s"\t${methodEntry.method()}")
+      }
       //println(methodEntry.method().variablesByName("x"))
-//        println(s"\t${methodEntry.thread().frames().size()}")
+      //        println(s"\t${methodEntry.thread().frames().size()}")
       // println(methodEntry.method(), methodEntry.location())
     }
-
 
 
     /////////////////////////////////////////////////////
@@ -82,20 +116,41 @@ object LowlevelTest extends App {
     s.onUnsafeEvent(MethodExitEventType).foreach { mee =>
       val methodExit = mee.asInstanceOf[MethodExitEvent]
       var value: Any = ""
+      val fullMethod = methodExit.method.toString
+      val methodName = methodExit.method.name
+      val caller = fullMethod.split('(').head
 
-      methodExit.returnValue() match {
+      value = methodExit.returnValue() match {
         case or: ObjectReference =>
-          if (isListType(methodExit.method().returnType())) {
-            value = makeList(or)
+          if (isList(or)) {
+            makeList(or)
+          } else {
+            //   println(or.getValues(or.referenceType().allFields()))
+            or
           }
-        case v => value = v
+
+        case v => v
       }
 
-      print("MExit:")
-      println(s"\t${methodExit.method()}")
-      println(s"\tReturn:\t$value")
-//    println("\t" + methodExit.thread().frame(0).visibleVariables())
+      if (caller.contains(listClass)) {
+        if (coverListMethods.contains(methodName)) {
+          print("MExit:")
+          println(s"\t${methodExit.method()}")
+          println(s"\tReturn:\t$value")
+          listExpwNow = false
+        }
+      } else if (!fullMethod.contains("anonfun")) {
+        print("MExit:")
+        println(s"\t${methodExit.method()}")
+        println(s"\tReturn:\t$value")
+      }else if (fullMethod.contains("anonfun") && fullMethod.contains("apply") && listExpwNow) {
+        println("MExit:Lambda")
+        println(s"\tReturn:\t$value")
+      }
+
+      //          println("\t" + methodExit.thread().frame(0).visibleVariables())
       if (methodExit.method().toString.contains("main(")) {
+        // end ////////////
         launchingDebugger.stop()
       }
     }
@@ -113,13 +168,11 @@ object LowlevelTest extends App {
         printStep(fileName, lineNumber, stepEvent)
         s.stepIntoLine(stepEvent.thread())
       } else if (stepEvent.location().method().toString.contains("List.")) {
-        println("//////////" + stepEvent.location().method().toString)
+//        println("//////////" + stepEvent.location().method().toString)
+//        println("\t" + makeList(stepEvent.thread().frame(1).getValue(stepEvent.thread().frame(1).visibleVariableByName("list")).asInstanceOf[ObjectReference]))
+//        println("\t" + stepEvent.thread().frame(1).visibleVariables())
+//        println("\t" + stepEvent.thread().frame(0).visibleVariables())
 
-        println("\t" + makeList(stepEvent.thread().frame(1).getValue(stepEvent.thread().frame(1).visibleVariableByName("list")).asInstanceOf[ObjectReference]))
-        println("\t" + stepEvent.thread().frame(1).visibleVariables())
-        println("\t" + stepEvent.thread().frame(0).visibleVariables())
-        println("\t" + makeList(stepEvent.thread().frame(0).thisObject()))
-        // println("\t" + stepEvent.thread().frame(0).getValue(stepEvent.thread().frame(0).visibleVariableByName("bf")))
         s.stepOutLine(stepEvent.thread())
       } else {
         //print(s"Step: $fileName:$lineNumber \t Source:${file(lineNumber - 1)}")
@@ -139,8 +192,8 @@ object LowlevelTest extends App {
     //  println("\t" + stepEvent.location().method())
   }
 
-  def isListType(tpe: Type): Boolean = tpe.name.contains("scala.collection.immutable.List")
-
+  def isList(or: ObjectReference): Boolean =
+    or.referenceType().fieldByName("head") != null
 
   def makeList(or: ObjectReference): List[_] = {
     val fields = or.getValues(or.referenceType().allFields())

@@ -8,11 +8,21 @@ object DebugTarget {
     val end = 3
     val list = List("a", "b", "c", "d", "e")
 
-    list map {x => x*2}
+    val f = (x: String) => x * 3
+
+    list map { x => x * 2 }
+
+    list map f
+
 
     val sliced = sliceRecursive(start, end, list)
     println(sliced)
 
+    def tte(ff: String => List[String]): Unit = {
+      list flatMap ff
+    }
+    val n = 4
+    tte({ x => List(x * n) })
   }
 
 
