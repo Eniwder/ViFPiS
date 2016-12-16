@@ -18,11 +18,15 @@ object DebugTarget {
     val sliced = sliceRecursive(start, end, list)
     println(sliced)
 
-    def tte(ff: String => List[String]): Unit = {
+    def tte(ff: String => List[String]): List[_] = {
       list flatMap ff
+      ff("c")
     }
     val n = 4
-    tte({ x => List(x * n) })
+    tte({ x => sss(x, n) })
+
+    def sss(s: String, n: Int): List[String] = List(s * n)
+
   }
 
 

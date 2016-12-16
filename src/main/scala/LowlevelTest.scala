@@ -87,30 +87,47 @@ object LowlevelTest extends App {
         if (coverListMethods.contains(methodName)) {
           print("MEntry:")
           println(s"\t${methodEntry.method()}")
+
+          searchAnonfunVariableName(methodEntry) match {
+            case Some(zzz) => println(zzz)
+            case None => println("no use variable")
+          }
           println("\t" + makeList(methodEntry.thread().frame(0).thisObject()))
           listExpwNow = true
+          // ここでListを文字列で渡して、描画側ではコンマ区切りで要素を取り出して、ラムダ式ごとに要素に適用してって、exitの結果をあてはめてって、最後にmap系のexitの結果を答えにして戻す
         }
       } else if (!fullMethod.contains("anonfun")) {
         print("MEntry:")
         println(s"\t${methodEntry.method()}")
-      } else if (fullMethod.contains("anonfun") && fullMethod.contains("apply") && listExpwNow) {
-        print("MEntry:Lambda\t")
-        val lambdaExpSource = file.drop(methodEntry.location().lineNumber() - 1).mkString("")
-        val lambdaRegex = """.*?\{(.*?)=>(.*?)\}.*""".r
-        lambdaExpSource match {
-          case lambdaRegex(arg, exp) => println(s"$arg => $exp")
-          case _ => println("err", lambdaExpSource)
+      } else if (fullMethod.contains("anonfun") && fullMethod.contains("apply")) {
+        print(s"MEntry:Anonfun:${methodEntry.location().lineNumber()}\t")
+        if (listExpwNow) {
+          val lambdaExpSource = file.drop(methodEntry.location().lineNumber() - 1).mkString("") // 複数行のラムダに対応
+          //val lambdaExpSource = file(methodEntry.location().lineNumber() - 1)
+          val lambdaRegex1 = """.*?\w+? \w+? \{(.*?)=>(.*?)\}.*""".r
+          val lambdaRegex2 = """.*? \w\.\((.*?)=>(.*?)\).*""".r
+          val lambdaRegex3 = """.*?\{(.*?)=>(.*?)\}.*""".r
+          lambdaExpSource match {
+            case lambdaRegex1(arg, exp) => println(s"1$arg => $exp")
+            case lambdaRegex2(arg, exp) => println(s"2$arg => $exp")
+            case lambdaRegex3(arg, exp) => println(s"3$arg => $exp")
+            case _ => println("err", lambdaExpSource)
+          }
+        } else {
+          println(searchAnonfunVariableName(methodEntry))
+          println(s"\t${methodEntry.method()}")
         }
 
-    // println(s"\t$methodEntry")
-      //  println(s"\t${methodEntry.method()}")
+
+        // println(s"\t$methodEntry")
+        //  println(s"\t${methodEntry.method()}")
+
+        //println(methodEntry.method().variablesByName("x"))
+        //        println(s"\t${methodEntry.thread().frames().size()}")
+        // println(methodEntry.method(), methodEntry.location())
       }
-      //println(methodEntry.method().variablesByName("x"))
-      //        println(s"\t${methodEntry.thread().frames().size()}")
-      // println(methodEntry.method(), methodEntry.location())
+
     }
-
-
     /////////////////////////////////////////////////////
     /////////////////////////////////////////////////////
     s.onUnsafeEvent(MethodExitEventType).foreach { mee =>
@@ -143,9 +160,12 @@ object LowlevelTest extends App {
         print("MExit:")
         println(s"\t${methodExit.method()}")
         println(s"\tReturn:\t$value")
-      }else if (fullMethod.contains("anonfun") && fullMethod.contains("apply") && listExpwNow) {
-        println("MExit:Lambda")
+      }else if (fullMethod.contains("anonfun") && fullMethod.contains("apply")) {
+        print("MExit:Lambda")
         println(s"\tReturn:\t$value")
+        if(listExpwNow){
+
+        }
       }
 
       //          println("\t" + methodExit.thread().frame(0).visibleVariables())
@@ -161,22 +181,26 @@ object LowlevelTest extends App {
       val stepEvent = pp.asInstanceOf[StepEvent]
       val fileName = stepEvent.location().sourcePath()
       val lineNumber = stepEvent.location().lineNumber()
-      if (stepEvent.location().method().toString.contains("main(")) {
+      val method = stepEvent.location().method().toString
+      if (method.contains("main(")) {
         printStep(fileName, lineNumber, stepEvent)
         s.stepIntoLine(stepEvent.thread())
-      } else if (stepEvent.location().method().toString.contains("sliceRecursive")) {
+      } else if (method.contains("sliceRecursive")) {
         printStep(fileName, lineNumber, stepEvent)
         s.stepIntoLine(stepEvent.thread())
-      } else if (stepEvent.location().method().toString.contains("List.")) {
+      } else if (method.contains("List.")) {
 //        println("//////////" + stepEvent.location().method().toString)
 //        println("\t" + makeList(stepEvent.thread().frame(1).getValue(stepEvent.thread().frame(1).visibleVariableByName("list")).asInstanceOf[ObjectReference]))
 //        println("\t" + stepEvent.thread().frame(1).visibleVariables())
 //        println("\t" + stepEvent.thread().frame(0).visibleVariables())
 
         s.stepOutLine(stepEvent.thread())
+//      } else if(method.contains("main")){
+//        printStep(fileName, lineNumber, stepEvent)
+//        s.stepIntoLine(stepEvent.thread())
       } else {
-        //print(s"Step: $fileName:$lineNumber \t Source:${file(lineNumber - 1)}")
-        //println("\t" + stepEvent.location().method() + " , " + stepEvent)
+        print(s"Step: $fileName:$lineNumber \t Source:${file(lineNumber - 1)}")
+        println("\t" + method + " , " + stepEvent)
         s.stepOutLine(stepEvent.thread())
       }
 
@@ -204,4 +228,12 @@ object LowlevelTest extends App {
       case _ => Nil
     }
   }
+
+  def searchAnonfunVariableName(methodEntry:MethodEntryEvent):Option[String] = {
+    import collection.JavaConversions._
+    val functionVarNames = methodEntry.thread().frame(1).visibleVariables().filter(_.typeName().contains(".Function")).map(_.name())
+    val applyLine = file(methodEntry.thread().frame(1).location().lineNumber() - 1)
+    functionVarNames.find(fv => applyLine.contains(s" $fv") || applyLine.contains(s".$fv"))
+  }
+
 }

@@ -94,19 +94,25 @@ object ConnectTest {
 
   addCallStack("dummy")
   push("sliceRecursive(start, end, list)")
+  // ListMapTes
+
+
+
+
+  // ListMapTes
   push("(start, end, ls) match {")
   push("(1, 3, List(\"a\", \"b\", \"c\", \"d\", \"e\")) match {")
-  //  push("case (_, _, Nil) => Nil")
-  //  push("case (_, e, _) if e <= 0")
-  //  push("case (s, e, h :: tail) if s <= 0")
-  //  push("case (s, e, h :: tail)")
-  //  push("case (1, 3, \"a\" :: List(\"b\", \"c\", \"d\", \"e\"))")
-  //  push("sliceRecursive(s - 1, e - 1, tail)")
-  //  push("sliceRecursive(0, 2, List(\"b\", \"c\", \"d\", \"e\"))")
-  //  //addCallStack()
-  //  push("(start, end, ls) match {")
-  //  push("(0, 2, List(\"b\", \"c\", \"d\", \"e\")) match {")
-  //    push("case (_, _, Nil) => Nil")
+    push("case (_, _, Nil) => Nil")
+    push("case (_, e, _) if e <= 0")
+    push("case (s, e, h :: tail) if s <= 0")
+    push("case (s, e, h :: tail)")
+    push("case (1, 3, \"a\" :: List(\"b\", \"c\", \"d\", \"e\"))")
+    push("sliceRecursive(s - 1, e - 1, tail)")
+    push("sliceRecursive(0, 2, List(\"b\", \"c\", \"d\", \"e\"))")
+    //addCallStack()
+    push("(start, end, ls) match {")
+    push("(0, 2, List(\"b\", \"c\", \"d\", \"e\")) match {")
+      push("case (_, _, Nil) => Nil")
   push("case (_, e, _) if e <= 0")
   push("case (s, e, h :: tail) if s <= 0")
   push("case (0, 2, \"b\" :: List(\"c\", \"d\", \"e\")) if 0 <= 0")
@@ -154,6 +160,8 @@ case object Expanding extends AnimationState
 case object Contracting extends AnimationState
 case object SubExp extends AnimationState
 case object SubEnd extends AnimationState
+case object ListMethodStart extends AnimationState
+case object ListMethodEnd extends AnimationState
 
 class ConnectTest extends Application with myUtil {
 
