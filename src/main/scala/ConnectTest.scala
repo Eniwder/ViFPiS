@@ -122,13 +122,13 @@ object ConnectTest {
   addCallStack("dummy")
   push("sliceRecursive(start, end, list)")
   // ListMapTes
-  push("x :: list map { x => x * 2 } ::: List(a,b,c,d,e)")
-  enterCollectionMethod( """List("a","b","c","d")""", "map", CollectionLambda("x", "x*2"))
-  push("\"aa\"")
-  push("\"bb\"")
-  push("\"cc\"")
-  push("\"dd\"")
-  exitCollectionMethod( """List("aa","bb","cc","dd")""")
+  push("x :: list flatMap { x => x * 2 } ::: List(a,b,c,d,e)")
+  enterCollectionMethod( """List("a","b","c","d")""", "flatMap", CollectionLambda("x", "x*2"))
+  push("List(\"aa\")")
+  push("List(\"bb\")")
+  push("List(\"cc\")")
+  push("List(\"dd\")")
+  exitCollectionMethod( """List("aa","bb","cc","dd")""")    // TODO 過程と結果のサイズが違うときバグる
   // ListMapTes
   push("(start, end, ls) match {")
   push("(1, 3, List(\"a\", \"b\", \"c\", \"d\", \"e\")) match {")
