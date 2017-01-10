@@ -13,7 +13,10 @@ object DebugTarget {
     list map { x => x * 2 }
 
     list map f
+    // replace to => list map { (x: String) => x * 3 }
 
+    // list map(f)
+    // replace to => list map( (x: String) => x * 3 )
 
     val sliced = sliceRecursive(start, end, list)
     println(sliced)

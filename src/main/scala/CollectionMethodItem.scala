@@ -3,14 +3,16 @@ case class CollectionMethodItem() {
   var variable: String = ""
   var iterateCount: Int = 0
   var exp: String = _
-  var lambda: CollectionLambda = _
+  var lambda: Lambda = _
   var stepResult: String = _
+  var maxStepResultLen: Int = 0
+  val process = scala.collection.mutable.Buffer.empty[String]
 
   private var _result: String = _
   private var _maxElemLen: Int = 0
   private var _list: List[String] = List()
   private var _actualResult: List[String] = List()
-  private var _maxResultLen: Int = 0
+
   private var _listString: String = _
 
   def listString_=(s: String) {
@@ -22,7 +24,6 @@ case class CollectionMethodItem() {
   def result_=(s: String): Unit = {
     _result = s
     _actualResult = CollectionMethodItem.stringList2List(s)
-    _maxResultLen = actualResult.map(_.length).max
   }
 
   def listString = _listString
@@ -30,16 +31,15 @@ case class CollectionMethodItem() {
   def maxElemLen = _maxElemLen
   def actualResult = _actualResult
   def result = _result
-  def maxResultLen = _maxResultLen
 
 }
 
 object CollectionMethodItem {
-  def stringList2List(s: String) = s.dropWhile(_ != '(').tail.dropRight(1).split(',').toList
+  def stringList2List(s: String) = s.dropWhile(_ != '(').tail.dropRight(1).split(',').map(_.trim).toList
 }
 
 
 // x map { y => y * 2 }
 // arg : y
 // exp : y * 2
-case class CollectionLambda(arg: String, exp: String)
+case class Lambda(arg: String, exp: String)

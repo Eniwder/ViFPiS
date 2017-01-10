@@ -1,6 +1,7 @@
 case class History(item:CallStackItem,
   qIndex: Int, // この時点でexecQueueが何番目を指しているか
   state: List[CallStackItem],
+  line:Int,
   display:Boolean = true) {
 
   val x = item.x

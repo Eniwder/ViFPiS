@@ -10,7 +10,7 @@ case class CallStackItem(depth: Int, offsetX: Int = CallStackItem.DefaultX, offs
   private var next = ""
 
   def padding: Int = {
-    Math.abs(depth - ConnectTest.callStack.size) * CallStackItem.DefaultPadding
+    Math.abs(depth - View.callStack.size) * CallStackItem.DefaultPadding
   }
 
   def updateNext(replace: String): Unit = {
@@ -43,7 +43,7 @@ case class CallStackItem(depth: Int, offsetX: Int = CallStackItem.DefaultX, offs
 
   def x = offsetX + (if (CallStackItem.subStep) 50 else 0)
 
-  def y = offsetY + (if (CallStackItem.subStep) ConnectTest.callStack(1).height else 0)
+  def y = offsetY + (if (CallStackItem.subStep) View.callStack(1).height else 0)
 
 }
 
@@ -52,7 +52,7 @@ object CallStackItem {
 
   val DefaultPadding = 12
   val DefaultX = 100
-  val DefaultY = 100
+  val DefaultY = 400
 
   var subStep = false
   var mainText = ""
