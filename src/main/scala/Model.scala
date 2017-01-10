@@ -163,7 +163,6 @@ object Model extends App {
               println("Step:\t" + rpAnonVar)
             }
             View.enterCollectionMethod(CMList, CMName, lambda, CMFName, CMLine)
-
           }
         } else {
           searchAnonfunVariableName(methodEntry) match {
