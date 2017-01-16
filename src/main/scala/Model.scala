@@ -1,3 +1,5 @@
+import java.util
+
 import com.sun.jdi._
 import com.sun.jdi.event._
 import org.scaladebugger.api.debuggers.LaunchingDebugger
@@ -5,27 +7,29 @@ import org.scaladebugger.api.lowlevel.events.EventType._
 import org.scaladebugger.api.utils.JDITools
 import org.scaladebugger.api.virtualmachines.ScalaVirtualMachine
 
+import scala.collection.mutable
 import scala.io.Source
 
 object Model extends App {
 
-  val BPNum = 14
+  val BPNum = 13
   // 4
-  val klass = Class.forName("Test") // Sample
-  val Path = "ScalaDebuggerTest"
+  val klass = Class.forName("Ex4")
+  // Sample
+  val Path = "F:/Temp/ScalaDebuggerTest"
 
   // Get the executing class name (remove $ from object class name)
   val className = klass.getName.replaceAllLiterally("$", "")
 
   // Add our main class to the classpath used to launch the class
   val classpath = JDITools.jvmClassPath
-  val jvmOptions = Seq("-classpath", s"F:/Temp/$Path/target/scala-2.11/classes;$classpath")
+  val jvmOptions = Seq("-classpath", s"$Path/target/scala-2.11/classes;$classpath")
   val launchingDebugger = LaunchingDebugger(
     className = className,
     jvmOptions = jvmOptions,
     suspend = true // Wait to start the main class until after connected
   )
-  val file = Source.fromFile(s"F:/Temp/$Path/src/main/scala/$className.scala").getLines().toList
+  val file = Source.fromFile(s"$Path/src/main/scala/$className.scala").getLines().toList
 
   val listClass = "scala.collection.immutable.List"
   val functionN = "scala.Function"
@@ -37,6 +41,14 @@ object Model extends App {
   private var CMName = ""
   private var CMFName = ""
   private var CMLine = 0
+
+  private var AnonLambda = new scala.collection.mutable.Stack[String]
+  private var AnonBe = new scala.collection.mutable.Stack[String]
+  private val argsMap = mutable.Map[com.sun.jdi.Method, Map[String, String]]()
+  private var anonSearchTime = false
+  private var anonBe = ""
+  private var anonFrameDepth = 1
+
 
   private var methodExited = false
   // ダメな奴だけど暫定
@@ -50,7 +62,7 @@ object Model extends App {
   private val be = Array.fill(1000)("")
   private val beLine = Array.fill(1000)("")
   private val beArgs = Array.fill(1000)("")
-  private val ifMap = Array.fill(1000)(scala.collection.mutable.Map.empty[Int,Boolean])
+  private val ifMap = Array.fill(1000)(scala.collection.mutable.Map.empty[Int, Boolean])
 
   def resisterMethodEntryEvent(s: ScalaVirtualMachine, filter: String) {
     val entryReq = s.underlyingVirtualMachine.eventRequestManager().createMethodEntryRequest()
@@ -103,54 +115,51 @@ object Model extends App {
 
       val methodEntry = mee.asInstanceOf[MethodEntryEvent]
       val fullMethod = methodEntry.method.toString
-      val methodName = methodEntry.method.name
+      val methodNameWithDollar = methodEntry.method.name
+      val methodName = if (methodNameWithDollar.endsWith("$1")) methodNameWithDollar.dropRight(2).split('$').last
+      else methodNameWithDollar.split('$').last
       val caller = fullMethod.split('(').head
       if (collectionExpNow && !collectionMethodInit) {
         // noop
       } else if (caller.contains(listClass)) {
-        if (coverListMethods.contains(methodName)) {
+        if (coverListMethods.contains(methodNameWithDollar)) {
           print("MEntry:")
           println(s"\t${methodEntry.method()}")
 
           CMFName = searchAnonfunVariableName(methodEntry) match {
             case Some(zzz) => println(zzz)
               zzz
-            case None      => println("no use variable")
+            case None => println("no use variable")
               ""
           }
           collectionExpNow = true
           collectionMethodInit = true
           // ここでListを文字列で渡して、描画側ではコンマ区切りで要素を取り出して、ラムダ式ごとに要素に適用してって、exitの結果をあてはめてって、最後にmap系のexitの結果を答えにして戻す
           println("Enter Collection Method")
-          println("\t" + makeList(methodEntry.thread().frame(0).thisObject()))
-          CMList = makeList(methodEntry.thread().frame(0).thisObject()).toString
-          CMName = methodName
+          println("\t" + getValue(methodEntry.thread().frame(0).thisObject(), "List()"))
+          CMList = getValue(methodEntry.thread().frame(0).thisObject(), "List()").toString
+          CMName = methodNameWithDollar
           CMLine = methodEntry.thread.frame(1).location().lineNumber()
         }
       } else if (!fullMethod.contains("anonfun")) {
         print("MEntry:")
         println(s"\t${methodEntry.method()}")
-        val methodNameWithDollar = methodEntry.method.name
-        val methodName =
-          if (methodNameWithDollar.endsWith("$1")) methodNameWithDollar.dropRight(2).split('$').last
-          else methodNameWithDollar.split('$').last
+
+        val be = beLine(methodEntry.thread().frameCount - 1)
+        if (hasArgMethod(be, methodName)) {
+          val argMap = getArgValueMap(methodEntry.method().arguments(), be, methodName)
+          argsMap.put(methodEntry.method(), argMap)
+        }
+
         //    println("\t" + methodName)
         View.addCallStack(methodName, methodEntry.method.location.lineNumber)
       } else if (fullMethod.contains("anonfun") && !fullMethod.contains("<init>")) {
         //print(s"MEntry:Anonfun:${methodEntry.location().lineNumber()}\t")
-        val lambdaExpSource = file.drop(methodEntry.location().lineNumber() - 1).mkString("") // 複数行のラムダに対応
-        val lambdaExpLine = file(methodEntry.location().lineNumber() - 1) // 一行限定
-        val lambdaRegex1 = """.*?\((\w+?).*?\).*?=>(.+?)""".r // xxx = (x:Int) => x*2
-        val lambdaRegex2 = """.*?\w+? *?= *?\{(.*?)=>(.*?)\}.*?""".r // xxx = { (x:Int) => x * 2}
-        val lambdaRegex3 = """.*?\{(.*?)=>(.*?)\}.*?""".r // { x => x*2 }
-        val lambda = lambdaExpLine match {
-            case lambdaRegex1(arg, exp) => Lambda(arg.trim, exp.trim)
-            case _                      => lambdaExpSource match {
-              case lambdaRegex2(arg, exp) => Lambda(arg.trim, exp.trim)
-              case lambdaRegex3(arg, exp) => Lambda(arg.trim, exp.trim)
-              case _                      => Lambda("lambda serach regex match err", lambdaExpSource)
-            }
-          }
+        // 複数行のラムダに対応
+        val lambdaExpSource = file.drop(methodEntry.location().lineNumber() - 1).mkString("")
+        val lambdaExpLine = file(methodEntry.location().lineNumber() - 1)
+        // 一行限定
+        val lambda = getLambda(lambdaExpLine)
         if (collectionExpNow) {
           if (collectionMethodInit && fullMethod.contains("apply")) {
             collectionMethodInit = false
@@ -165,30 +174,25 @@ object Model extends App {
             View.enterCollectionMethod(CMList, CMName, lambda, CMFName, CMLine)
           }
         } else {
+          // MethodExitに対応する高階関数の置き換え履歴をここで追加
+          // AnonBe.push(rpRpAnonVar)
+          // AnonLambda.push(rpLambdaString)
+
           searchAnonfunVariableName(methodEntry) match {
             case Some(afvn) =>
-              val line = file(methodEntry.thread().frame(1).location().lineNumber() - 1)
+              val _line = file(methodEntry.thread().frame(1).location().lineNumber() - 1)
+              val line = replaceVariable2Value(_line, methodEntry.thread().frame(1))
               val lambdaString = s"{ ${lambda.arg} => ${lambda.exp} }"
-
               println(s"MEntry:$afvn:${methodEntry.location().lineNumber()}")
-              println("\t" + methodEntry.method())
-              println("\t" + line)
-              println("\t" + lambdaString)
-              // val applyLine = file(methodEntry.thread().frame(1).location().lineNumber()-1)
-              //              val regex =  ("([^a-zA-Z])(" + avn + ")\\(.*?\\)(?![a-zA-Z0-9])").r
-              //              val finds = regex findAllMatchIn applyLine
-              //           //   println("debug",finds.mkString(","))
-              //              finds collect { case x if !finds.hasNext => x } toList match {
-              //                case h :: t => println(h.group(0) + avn + h.group(1),"groups:",h.group(0))
-              //                case Nil    => println("anon func replace regex match err", applyLine, avn,regex)
-              //              }
-              val rpAnonVar = line.replaceFirst(afvn + """\(.+?\)""", lambdaString).trim
-              println("Step:\t" + rpAnonVar)
-              View.push(rpAnonVar, methodEntry.thread().frame(1).location().lineNumber())
-            case None       =>
+              val rpLambdaString = replaceVariable2Value(lambdaString, methodEntry.thread().frame(0))
+              val rpRpAnonVar = line.replaceFirst(afvn + """\(.+?\)""", rpLambdaString).trim
+              // View.push(rpRpAnonVar, lineN)
+              // println("StepRT:\t" + rpRpAnonVar)
+              AnonBe.push(rpRpAnonVar)
+              AnonLambda.push(rpLambdaString)
+            case None =>
             // 何もしなくてよさそう？
           }
-
         }
       } else {
         //  noop
@@ -221,6 +225,7 @@ object Model extends App {
       }
 
       value = getValue(methodExit.returnValue(), methodExit.returnValue.toString)
+      value = if(value == Nil) "Nil" else value
       if (fullMethod.contains("<init>")) {
         // noop
       } else if (collectionExpNow && fullMethod.contains("apply") && !fullMethod.contains("List") && methodExit.method().returnTypeName().contains("java.lang.Object")) {
@@ -237,14 +242,13 @@ object Model extends App {
       } else if (fullMethod.contains(listClass)) {
         val methodNameWithoutArg = fullMethod.split('(') toList match {
           case a :: b :: t => a
-          case a :: nil    => a
-          case _           => ""
+          case a :: nil => a
+          case _ => ""
         }
         if (!methodNameWithoutArg.contains(listClass)) {
           print("MExit:")
           println(s"\t${methodExit.method()}")
           println(s"\tReturn:\t$value")
-
           View.popCallStack(value.toString, line)
         }
       } else if (!fullMethod.contains("anonfun")) {
@@ -261,8 +265,11 @@ object Model extends App {
             print("MExit:Anon")
             println("\t" + avn)
             println(s"\tReturn:\t$value")
-            View.popCallStack(value.toString, methodExit.thread().frame(1).location().lineNumber)
-
+            //View.popCallStack(value.toString, methodExit.thread().frame(1).location().lineNumber)
+            val be = AnonBe.pop()
+            val la = AnonLambda.pop()
+            val rpText = be.replaceAllLiterally(la, value.toString)
+            View.push(rpText, methodExit.thread().frame(1).location().lineNumber)
           case None =>
         }
       }
@@ -283,14 +290,56 @@ object Model extends App {
         val execLine = extractExecLine(file(lineNumber - 1)).trim
         val line = if (execLine.contains("case")) execLine.replace("=>", "") else execLine
         val bl = beLine(frameCount)
-        // TODO 高階関数がクラス中の関数宣言場所を参照するのを防ぎたいが、これでいいのか不明　
+        // TODO 高階関数がクラス中の関数宣言場所を参照するのを防ぎたいが、これでいいのか不明
         if (!stepEvent.location().toString.contains("main$")
+          && !stepEvent.location().toString.contains("anonfun$")
           //  && !methodExited
           && !(matchEnter(frameCount) >= InMatch && execLine.contains("match"))
           && !(matchEnter(frameCount) == NoMatch && execLine.contains("case")) // 末尾再帰が最適化されるとこうなる？
         ) {
           printStep(fileName, lineNumber, line, frameCount, stepEvent)
           methodExited = false
+          anonSearchTime = false
+          anonBe = ""
+          anonFrameDepth = 1
+        } else if(stepEvent.location().toString.contains("anonfun$")){
+          (anonFrameDepth until stepEvent.thread().frameCount()).find((n: Int) => searchAnonfunVariableName(stepEvent, n) nonEmpty) match {
+            case Some(fc) =>
+              anonFrameDepth = fc
+              val afvn = searchAnonfunVariableName(stepEvent, fc).get
+              val _line =
+                if (anonSearchTime) {
+                  anonBe
+                } else {
+                  anonSearchTime = true
+                  file(stepEvent.thread().frame(1).location().lineNumber() - 1)
+                }
+              val line = replaceVariable2Value(_line, stepEvent.thread().frame(1))
+              val lambda = getLambda(execLine)
+              val defoLS = s"{ ${lambda.arg} => ${lambda.exp} }"
+              val lambdaString = argsMap.get(stepEvent.thread().frame(fc).location().method()) match {
+                case Some(argMap) => argMap.getOrElse(afvn, defoLS)
+                case None => defoLS
+              }
+              println(s"StepAnon:$afvn:${stepEvent.location().lineNumber()}")
+              println("\t" + line)
+              println("\t" + lambdaString)
+              val rpAnonVar = line.replaceFirst(afvn + """\(.+?\)""", lambdaString).trim
+              println("Step:\t" + rpAnonVar)
+              val lineN = stepEvent.thread().frame(1).location().lineNumber()
+              View.push(rpAnonVar, lineN)
+              val rpLambdaString = replaceVariable2Value(lambdaString, stepEvent.thread().frame(0))
+              val rpRpAnonVar = line.replaceFirst(afvn + """\(.+?\)""", rpLambdaString).trim
+              View.push(rpRpAnonVar, lineN)
+              println("StepRT:\t" + rpRpAnonVar)
+              anonBe = rpRpAnonVar
+              // MethodExitと対応が取れないので、ここでは履歴に追加しない
+              // AnonBe.push(rpRpAnonVar)
+              // AnonLambda.push(rpLambdaString)
+            case None =>
+              // noop
+              println("@@@@@@@@@@@", stepEvent.location, line)
+          }
         }
         if (!stepEvent.location().toString.contains("main$")) {
           matchEnter(frameCount) =
@@ -328,7 +377,8 @@ object Model extends App {
         beArgs(frameCount) = nowArgs
 
         s.stepIntoLine(stepEvent.thread())
-      } else if (frameName.contains("List.")) {
+      }
+      else if (frameName.contains("List.")) {
         //        println("//////////" + stepEvent.location().method().toString)
         //
         //        println("\t" + makeList(stepEvent.thread().frame(1).getValue(stepEvent.thread().frame(1).visibleVariableByName("list")).asInstanceOf[ObjectReference]))
@@ -348,17 +398,17 @@ object Model extends App {
 
   def printStep(fileName: String, lineNum: Int, line: String, frameCount: Int, stepEvent: com.sun.jdi.event.LocatableEvent): Unit = {
     if (be(frameCount) == s"Step:\t$fileName:$lineNum \tSource:$line") return
-    if(ifMap(frameCount).getOrElse(lineNum,false)){
-      ifMap(frameCount).put(lineNum,false)
+    if (ifMap(frameCount).getOrElse(lineNum, false)) {
+      ifMap(frameCount).put(lineNum, false)
       return
     }
     println(s"Step:\t$fileName:$lineNum \tSource:\t$line")
     be(frameCount) = s"Step:\t$fileName:$lineNum \tSource:$line"
     View.push(line, lineNum)
     beLine(frameCount) = line
-    if(line.contains("if (")){
+    if (line.contains("if (")) {
       println(line)
-      ifMap(frameCount).put(lineNum,true)
+      ifMap(frameCount).put(lineNum, true)
     }
     val rpText = replaceVariable2Value(line, stepEvent.thread().frame(0))
     if (!line.contains("case") && line != rpText && matchEnter(frameCount) != InMatch) {
@@ -380,13 +430,13 @@ object Model extends App {
     //   println(fields)
     (fields.get(head), fields.get(tail)) match {
       case (h, t: ObjectReference) => h :: makeList(t)
-      case _                       => Nil
+      case _ => Nil
     }
   }
 
-  def searchAnonfunVariableName(methodEntry: com.sun.jdi.event.LocatableEvent): Option[String] = {
+  def searchAnonfunVariableName(methodEntry: com.sun.jdi.event.LocatableEvent, n: Int = 1): Option[String] = {
     import collection.JavaConversions._
-    val functionVarNames = methodEntry.thread().frame(1).visibleVariables().filter(_.typeName().contains(".Function")).map(_.name())
+    val functionVarNames = methodEntry.thread().frame(n).visibleVariables().filter(_.typeName().contains(".Function")).map(_.name())
     val applyLine = file(methodEntry.thread().frame(1).location().lineNumber() - 1)
     val removeCommentLine = applyLine.replaceAll( """\/\*.*\*\/""", "")
     functionVarNames.find(fv => removeCommentLine.contains(s" $fv") || removeCommentLine.contains(s"($fv)"))
@@ -422,32 +472,83 @@ object Model extends App {
   def makeListDeep(list: List[Any]): List[_] = {
     list.collect {
       case sl: ObjectReference => getValue(sl, sl.toString)
-      case x                   => x
+      case x => x
     }
   }
 
+  def getLambda(line: String): Lambda = {
+    val lambdaRegex1 =
+      """.*? \((\w+?).*?\).*?=>(.+?)""".r
+    // xxx = (x:Int) => x*2
+    val lambdaRegex2 =
+      """.*?\w+? *?= *?\{(.*?)=>(.*?)\}.*?""".r
+    // xxx = { (x:Int) => x * 2}
+    val lambdaRegex3 =
+      """.*?\{(.*?)=>(.*?)\}.*?""".r
+    // { x => x*2 }
+    line match {
+      case lambdaRegex1(arg, exp) => Lambda(arg.trim, exp.trim)
+      case _ => line match {
+        case lambdaRegex2(arg, exp) => Lambda(arg.trim, exp.trim)
+        case lambdaRegex3(arg, exp) => Lambda(arg.trim, exp.trim)
+        case _ => Lambda("lambda serach regex match err", line)
+      }
+    }
+  }
+
+  def hasArgMethod(line: String, mname: String): Boolean = line.contains(s"$mname(") && !line.contains(s"$mname()")
+
+  // ViewのextractMethodTextと似てる
+  def getArgValueMap(variables: util.List[LocalVariable], be: String, mname: String) = {
+    val startIndex = be.indexOf(mname)
+    val methodStartText = be.drop(startIndex + mname.length)
+    val endIndex = View.searchMethodEnd(methodStartText)
+    val methodCall = methodStartText.slice(1, endIndex - 1)
+    var braceCount = 0
+    var buffer = ""
+    var resultBuff = mutable.Buffer.empty[String]
+    methodCall.foreach { c =>
+      if (c == ',' && braceCount == 0) {
+        resultBuff += buffer.trim
+        buffer = ""
+      } else {
+        buffer += c
+      }
+      if (c == '(') {
+        braceCount += 1
+      } else if (c == ')') {
+        braceCount -= 1
+      }
+    }
+    resultBuff += buffer.trim
+    import collection.JavaConversions._
+    variables.map(_.name()).zip(resultBuff).toMap
+  }
+
+
   def getValue(value: com.sun.jdi.Value, name: String): Any = {
     val ret = value match {
-
-      case v: BooleanValue                 => v.value()
-      case v: ByteValue                    => v.value()
-      case v: CharValue                    => "'" + v.value() + "'"
-      case v: DoubleValue                  => v.value()
-      case v: FloatValue                   => v.value()
-      case v: IntegerValue                 => v.value()
-      case v: LongValue                    => v.value()
-      case v: ShortValue                   => v.value()
-      case v: ArrayReference               => v // TODO
-      case v: StringReference              => "\"" + v.value() + "\""
-      case v: ThreadReference              => v // 未対応
-      case v: ThreadGroupReference         => v // 未対応
-      case v: ClassObjectReference         => v // 未対応()
-      case v: ClassLoaderReference         => v // 未対応()
+      case v: BooleanValue => v.value()
+      case v: ByteValue => v.value()
+      case v: CharValue => "'" + v.value() + "'"
+      case v: DoubleValue => v.value()
+      case v: FloatValue => v.value()
+      case v: IntegerValue => v.value()
+      case v: LongValue => v.value()
+      case v: ShortValue => v.value()
+      case v: ArrayReference => v // TODO
+      case v: StringReference => "\"" + v.value() + "\""
+      case v: ThreadReference => v // 未対応
+      case v: ThreadGroupReference => v // 未対応
+      case v: ClassObjectReference => v // 未対応()
+      case v: ClassLoaderReference => v // 未対応()
       case v: ObjectReference if isList(v) => makeListDeep(makeList(v)) // 現状オブジェクトはListのみ対応とする
-      case v: ObjectReference              => name // 未対応のオブジェクトの場合は申し訳ないが名前のままにする
-      case v: VoidValue                    => "void"
-      case null                            => null
-      case v                               => v // 多分こない
+      case v: ObjectReference if v.referenceType().fieldByName("value") != null =>
+        getValue(v.getValue(v.referenceType().fieldByName("value")), name)
+      case v: ObjectReference => name         // 未対応のオブジェクトの場合は申し訳ないが名前のままにする
+      case v: VoidValue => "void"
+      case null => null
+      case v => v // 多分こない
     }
     // また、パターンマッチなどで使わない変数が最適化された場合、nullとなるのでそれも防ぐ
     // 基本的にScalaの場合nullはありえないとする

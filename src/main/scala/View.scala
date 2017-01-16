@@ -1,11 +1,8 @@
-import java.awt.event
-import java.awt.event.MouseListener
 import javafx.application.Application
 
 import com.sun.javafx.tk.Toolkit
 
 import scala.collection.mutable
-import scala.io.Source
 import scala.language.postfixOps
 import scalafx.Includes._
 import scalafx.animation.{KeyFrame, Timeline}
@@ -14,7 +11,7 @@ import scalafx.scene.Scene
 import scalafx.scene.canvas.{Canvas, GraphicsContext}
 import scalafx.scene.control._
 import scalafx.scene.effect.{BoxBlur, DropShadow, Effect}
-import scalafx.scene.input.{ScrollEvent, MouseEvent}
+import scalafx.scene.input.{MouseEvent, ScrollEvent}
 import scalafx.scene.paint.Color
 import scalafx.scene.text.Font
 import scalafx.stage.Stage
@@ -136,7 +133,7 @@ object View {
   private def copyCallStack(cs: Seq[CallStackItem]): List[CallStackItem] = {
     def loop(stack: List[CallStackItem]): List[CallStackItem] = stack match {
       case h :: t => CallStackItem.dupe(h) :: loop(t)
-      case Nil    => Nil
+      case Nil => Nil
     }
     loop(cs.toList)
   }
@@ -228,6 +225,16 @@ object View {
 
   callStack.push(CallStackItem(callStack.size))
 
+  def searchMethodEnd(text: String, braceCount: Int = 0, index: Int = 1): Int = text.toList match {
+    case '(' :: t => searchMethodEnd(t.mkString(""), braceCount + 1, index + 1)
+    case ')' :: t if braceCount == 1 => index
+    case ')' :: t => searchMethodEnd(t.mkString(""), braceCount - 1, index + 1)
+    case h :: t => searchMethodEnd(t.mkString(""), braceCount, index + 1)
+    case Nil =>
+      sys.error(s"引数 $text が不正なテキストです")
+      0 // ここには来ないはず
+  }
+
 
   def main(args: Array[String]) = Application.launch(classOf[View])
 
@@ -269,6 +276,7 @@ class View extends Application with myUtil {
     historyPane.layoutX = canvasW - hCanvasW
     historyPane.layoutY = 0
     historyPane.maxHeight = hCanvasH
+    historyPane.maxWidth = 300
     hPane = historyPane
     hCanvas.handleEvent(MouseEvent.MouseMoved) {
       m: MouseEvent =>
@@ -393,7 +401,7 @@ class View extends Application with myUtil {
     }
 
     new Stage(stage) {
-      title = "connectTest"
+      title = "ViFPiS"
       scene = new Scene() {
         content += canvas
         content += historyPane
@@ -622,7 +630,7 @@ class View extends Application with myUtil {
                 if (count5 == 30) {
                   CMItem.process += CMItem.actualResult(CMItem.iterateCount)
                 }
-              case _        =>
+              case _ =>
                 val bwh = 9 - 10 * (count5 % 30) / 30
                 gc.setEffect(new BoxBlur(bwh, bwh, 3))
                 gc.fillText(CMItem.stepResult, now.x + resultX, now.y + CMdistance * 2)
@@ -688,7 +696,7 @@ class View extends Application with myUtil {
               } else {
                 printList(CMItem.actualResult, now.x, now.y + CMdistance * 3)
               }
-            case _         =>
+            case _ =>
               printList(CMItem.process, now.x, now.y + CMdistance * 3)
               count = 90
           }
@@ -949,7 +957,7 @@ class View extends Application with myUtil {
             case CollectionMethodExit =>
               CallStackItem.state = CollectionMethodEnd
               now.updateNext(now.text.replace(CMItem.exp, CMItem.result))
-            case x                    =>
+            case x =>
               CMItem.stepResult = x.split(Sep).head
               CallStackItem.state = CollectionMethodStep
           }
@@ -972,7 +980,7 @@ class View extends Application with myUtil {
             case CollectionMethodExit =>
               now.updateNext(now.text.replace(CMItem.exp, CMItem.result))
               CallStackItem.state = CollectionMethodEnd
-            case x                    =>
+            case x =>
               CMItem.stepResult = x.split(Sep).head
               CallStackItem.state = CollectionMethodStep
           }
@@ -1006,16 +1014,6 @@ class View extends Application with myUtil {
   // control end --- //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
   /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-  private def searchMethodEnd(text: String, braceCount: Int = 0, index: Int = 1): Int = text.toList match {
-    case '(' :: t                    => searchMethodEnd(t.mkString(""), braceCount + 1, index + 1)
-    case ')' :: t if braceCount == 1 => index
-    case ')' :: t                    => searchMethodEnd(t.mkString(""), braceCount - 1, index + 1)
-    case h :: t                      => searchMethodEnd(t.mkString(""), braceCount, index + 1)
-    case Nil                         =>
-      sys.error(s"引数 $text が不正なテキストです")
-      0 // ここには来ないはず
-  }
-
   private def updateSize(text: String, depth: Int)(implicit gc: GraphicsContext): Unit = {
     callStack.foreach { item =>
       val (w, h) = textSize(text)
@@ -1031,7 +1029,8 @@ class View extends Application with myUtil {
 
   private def extractMethodText(item: CallStackItem, callMethod: String)(implicit gc: GraphicsContext): String = {
     val startIndex = item.text.indexOf(callMethod)
-    val methodStartText = item.text.drop(startIndex) // TODO この方法だと同じ式で同じメソッドを複数呼んだ場合に詰むかも？
+    val methodStartText = item.text.drop(startIndex)
+    // TODO この方法だと同じ式で同じメソッドを複数呼んだ場合に詰むかも？
     val endIndex = searchMethodEnd(methodStartText)
     item.setMethodCallIndex(startIndex, startIndex + endIndex)
     methodStartText.take(endIndex)
@@ -1040,7 +1039,7 @@ class View extends Application with myUtil {
 
   // textの左上がxy、paddingに応じて四角形が大きくなる
   private def textInBox(text: String, x: Int, y: Int, w: Int, h: Int, padding: Int = 8, boxColor: Color = Color.White,
-    eff1: Effect = null, eff2: Effect = null, eff3: Effect = null, lw: Int = 2, bc: Color = Color.Black)(implicit gc: GraphicsContext): Unit = {
+                        eff1: Effect = null, eff2: Effect = null, eff3: Effect = null, lw: Int = 2, bc: Color = Color.Black)(implicit gc: GraphicsContext): Unit = {
     val des = fontMetrics.getDescent.toInt
     rectWithBorder(x - padding / 4, y - h + des - padding / 4 + lw / 2, w + padding / 2, h + padding / 2, boxColor, eff1, eff2, lw, bc)
     gc.setEffect(eff3)
@@ -1108,16 +1107,19 @@ class View extends Application with myUtil {
     clearCanvas()
     gc.setFill(Color.Black)
     val canvas = gc.canvas
-    val hist = if(ptnTB.selected.value) View.history.reverse.zipWithIndex else View.history.reverse.zipWithIndex.filter(x => !x._1.text.contains("case"))
+    val hist = if (ptnTB.selected.value) View.history.reverse.zipWithIndex else View.history.reverse.zipWithIndex.filter(x => !x._1.text.contains("case"))
     val height = 32
+    var maxWidth = canvas.width.toInt
     canvas.height = (hist.size * height + height / 2 + height + 10) max canvas.height.toInt
-    for ((h,index) <- hist.zipWithIndex) {
+    for ((h, index) <- hist.zipWithIndex) {
       val x = (h._1.x - CallStackItem.DefaultX) / 10 + canvas.getLayoutX.toInt + 5
       val y = (index + 1) * height + canvas.getLayoutY.toInt + 10
       val newHy = hmy + canvas.getLayoutY.toInt
-      val withinRange = newHy - height / 3 < y && y < newHy + height / 1.5 // よく分からんけど、3と1.5がちょうどいい
+      val withinRange = newHy - height / 3 < y && y < newHy + height / 1.5
+      // よく分からんけど、3と1.5がちょうどいい
       val boxColor = if (withinRange) Color.SlateGray else Color.LightGray
       val borderColor = if (withinRange) Color.DimGray else Color.Black
+      maxWidth = maxWidth max (x + h._1.w - canvas.getLayoutX.toInt)
       textInBox(h._1.text, x, y, h._1.w, height - 8, boxColor = boxColor, bc = borderColor)
       // 履歴がクリックされていたら、その場所を復元する
       // クリックイベントにしなかった理由は、ここで定義したheightによって位置が変わることと、withinRangeを利用するため
@@ -1125,6 +1127,7 @@ class View extends Application with myUtil {
         restoreHistory(h._2, h._1.qIndex)
       }
     }
+    canvas.width = maxWidth
     restoreHistoryF = false
   }
 
@@ -1157,7 +1160,7 @@ class View extends Application with myUtil {
       now.updateNext(execQueue.dequeue().split(Sep).head)
       lineTmp = highlight
     }
-    if(now.text.startsWith("case ")){
+    if (now.text.startsWith("case ")) {
       CallStackItem.mainText = historyQueue.take(qIndex).reverse.map(_.split(Sep).head).find(_.contains("match")).get
     }
     stepReady()
