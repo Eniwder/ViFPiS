@@ -122,6 +122,12 @@ object View {
 
   private def makeMsg(ops: Any*): String = ops.mkString(Sep)
 
+  private def getExecCommand(): Command ={
+    val cmd = execQueue.dequeue()
+    MyLogger.log(s"VIEW:Auto:${autoTB.selected.value}:Dequeue:$cmd")
+    cmd
+  }
+
   private def addHistory(item: CallStackItem, line: Int, display: Boolean = true): Unit = {
     if (nowIndex > historyMaxIndex) {
       history.push(History(item, nowIndex, copyCallStack(callStack), line, display))
@@ -357,7 +363,7 @@ class View extends Application with myUtil {
     }
 
 
-    val collectionMethodToggleButton = new ToggleButton("collection Method")
+    val collectionMethodToggleButton = new ToggleButton("Collection Method")
     cmTB = collectionMethodToggleButton
     collectionMethodToggleButton.layoutX = 40 + 60 + 60
     collectionMethodToggleButton.layoutY = 320
@@ -365,6 +371,7 @@ class View extends Application with myUtil {
     collectionMethodToggleButton.style = if (collectionMethodToggleButton.selected.value) "-fx-base: steelblue" else "-fx-base: lightblue"
     collectionMethodToggleButton.setOnAction {
       e: ActionEvent =>
+        MyLogger.log(s"VIEW:Push CollectionMethod:${collectionMethodToggleButton.selected.value}")
         if (collectionMethodToggleButton.selected.value) {
           collectionMethodToggleButton.style = "-fx-base: steelblue"
         } else {
@@ -380,6 +387,7 @@ class View extends Application with myUtil {
     patternMatchToggleButton.style = if (patternMatchToggleButton.selected.value) "-fx-base: steelblue" else "-fx-base: lightblue"
     patternMatchToggleButton.setOnAction {
       e: ActionEvent =>
+        MyLogger.log(s"VIEW:Push PatternMatch:${patternMatchToggleButton.selected.value}")
         if (patternMatchToggleButton.selected.value) {
           patternMatchToggleButton.style = "-fx-base: steelblue"
         } else {
@@ -397,6 +405,7 @@ class View extends Application with myUtil {
     speedCB.value = 1
     speedCB.setOnAction {
       e: ActionEvent =>
+        MyLogger.log(s"VIEW:changeSpeed:${speedCB.value.value}")
         speed = speedCB.value.value
     }
 
@@ -763,7 +772,7 @@ class View extends Application with myUtil {
           count -= speed
           return
         }
-        val command = execQueue.dequeue()
+        val command = getExecCommand()
         now.update()
         command.split(Sep) match {
           case Array(MethodEnter, msg, line) =>
@@ -771,11 +780,11 @@ class View extends Application with myUtil {
               // ↑aete
               now.update()
               callStack.push(CallStackItem(callStack.size))
-              val next = execQueue.dequeue().split(Sep)
+              val next = getExecCommand().split(Sep)
               callStack.top.updateNext(next.head)
               //              callStack.top.update()
               highlight = next.last.toInt
-              //              val next = execQueue.dequeue().split(Sep)
+              //              val next = getExecCommand().split(Sep)
               //              callStack.top.updateNext(next.head)
               //              highlight = next.last.toInt
               //              CallStackItem.state = Emphasis
@@ -838,7 +847,7 @@ class View extends Application with myUtil {
                 CallStackItem.mainText = now.text
                 View.addHistory(now, line.toInt, display = false)
                 now.update()
-                val next = execQueue.dequeue().split(Sep)
+                val next = getExecCommand().split(Sep)
                 now.updateNext(next.head)
                 lineTmp = next.last.toInt
                 CallStackItem.state = SubExp
@@ -895,7 +904,7 @@ class View extends Application with myUtil {
         countMax = 60
         if (count > countMax) {
           count = 0
-          val next = execQueue.dequeue().split(Sep)
+          val next = getExecCommand().split(Sep)
           callStack.top.updateNext(next.head)
           highlight = next.last.toInt
           CallStackItem.state = Emphasis
@@ -913,7 +922,7 @@ class View extends Application with myUtil {
           val returnValueText = h + s"%-${now.maxIndex}s".format(now.text) + t
           caller.updateNext(returnValueText)
           caller.update()
-          val next = execQueue.dequeue().split(Sep)
+          val next = getExecCommand().split(Sep)
           caller.updateNext(next.head)
 
           if (caller.nextText == EndOfData) {
@@ -953,7 +962,7 @@ class View extends Application with myUtil {
         }
         if (count > countMax) {
           count = 0
-          execQueue.dequeue() match {
+          getExecCommand() match {
             case CollectionMethodExit =>
               CallStackItem.state = CollectionMethodEnd
               now.updateNext(now.text.replace(CMItem.exp, CMItem.result))
@@ -976,7 +985,7 @@ class View extends Application with myUtil {
         if (count > countMax) {
           count = 0
           CMItem.iterateCount += 1
-          execQueue.dequeue() match {
+          getExecCommand() match {
             case CollectionMethodExit =>
               now.updateNext(now.text.replace(CMItem.exp, CMItem.result))
               CallStackItem.state = CollectionMethodEnd
@@ -1147,6 +1156,7 @@ class View extends Application with myUtil {
     execQueue ++= historyQueue.drop(qIndex)
 
     val now = callStack.top
+    MyLogger.log(s"VIEW:RestoreHistory:${now.text}")
     val nextIsEnd = (now.nextText == EndOfData) || now.nextText == ""
     val nextIsSubexp = now.nextText.startsWith("case ")
     CallStackItem.subStep = nextIsSubexp || now.text.startsWith("case ")
@@ -1157,7 +1167,7 @@ class View extends Application with myUtil {
     if (nextIsSubexp) {
       CallStackItem.mainText = now.text
       now.update()
-      now.updateNext(execQueue.dequeue().split(Sep).head)
+      now.updateNext(getExecCommand().split(Sep).head)
       lineTmp = highlight
     }
     if (now.text.startsWith("case ")) {

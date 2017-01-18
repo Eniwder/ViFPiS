@@ -12,9 +12,11 @@ import scala.io.Source
 
 object Model extends App {
 
+// Ex1:4  Ex2:13  Ex3:13 Ex4:13
+
   val BPNum = 13
   // 4
-  val klass = Class.forName("Ex4")
+  val klass = Class.forName("Ex3")
   // Sample
   val Path = "F:/Temp/ScalaDebuggerTest"
 
@@ -78,7 +80,7 @@ object Model extends App {
 
   launchingDebugger.start { s =>
     println("Launched and connected to JVM: " + s.uniqueId)
-
+    MyLogger.log("MODEL:Launched and connected to JVM: " + s.uniqueId)
     View.loadSourceCode(file)
 
     val cfileName = JDITools.scalaClassStringToFileString(className)
@@ -219,6 +221,7 @@ object Model extends App {
       if (methodExit.method().toString.contains("main(")) {
         // end ////////////
         println("Debugger Stop")
+        MyLogger.log("MODEL:Debugger End")
         launchingDebugger.stop()
         View.end()
         View.main(Array())
@@ -499,7 +502,7 @@ object Model extends App {
   def hasArgMethod(line: String, mname: String): Boolean = line.contains(s"$mname(") && !line.contains(s"$mname()")
 
   // ViewのextractMethodTextと似てる
-  def getArgValueMap(variables: util.List[LocalVariable], be: String, mname: String) = {
+  def getArgValueMap(variables: util.List[LocalVariable], be: String, mname: String): Map[String, String] = {
     val startIndex = be.indexOf(mname)
     val methodStartText = be.drop(startIndex + mname.length)
     val endIndex = View.searchMethodEnd(methodStartText)
@@ -544,8 +547,8 @@ object Model extends App {
       case v: ClassLoaderReference => v // 未対応()
       case v: ObjectReference if isList(v) => makeListDeep(makeList(v)) // 現状オブジェクトはListのみ対応とする
       case v: ObjectReference if v.referenceType().fieldByName("value") != null =>
-        getValue(v.getValue(v.referenceType().fieldByName("value")), name)
-      case v: ObjectReference => name         // 未対応のオブジェクトの場合は申し訳ないが名前のままにする
+        getValue(v.getValue(v.referenceType().fieldByName("value")), name)  // TODO Integerなどのラッパークラス以外だと変な動作をするかも
+      case v: ObjectReference => name         // TODO 未対応のオブジェクトの場合は申し訳ないが名前のままにする
       case v: VoidValue => "void"
       case null => null
       case v => v // 多分こない
